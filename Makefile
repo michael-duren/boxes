@@ -37,3 +37,19 @@ install: build
 
 uninstall:
 	rm -f $(PREFIX)/bin/$(BINARY)
+
+# CONTAINER SPECIFIC SUB CMDS W EX ARGS
+CONTAINER := mycontainer
+IMG := busybox
+
+create:
+	go run $(PKG) create --bundle $(IMG) $(CONTAINER) 
+
+state:
+	go run $(PKG) state $(CONTAINER)
+
+kill:
+	go run $(PKG) kill $(CONTAINER) 9
+
+delete:
+	go run $(PKG) delete $(CONTAINER)
