@@ -1,30 +1,20 @@
-package main
+package cli
 
 import (
-	"fmt"
-
 	"github.com/michael-duren/boxes/internal/operations"
 	"github.com/spf13/cobra"
 )
 
-func stateCmd() *cobra.Command {
+func startCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:  "state [flags] CONTAINER_ID",
+		Use:  "start [flags] CONTAINER_ID",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			containerID := args[0]
 
-			state, err := operations.State(&operations.StateOpts{
+			return operations.Start(&operations.StartOpts{
 				ID: containerID,
 			})
-			if err != nil {
-				return err
-			}
-
-			// TODO: do something with 'state'
-			fmt.Println(state)
-
-			return nil
 		},
 	}
 
