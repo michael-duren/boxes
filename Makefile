@@ -7,6 +7,9 @@ PREFIX ?= $(HOME)/.local
 
 all: build
 
+alpine:
+	./scripts/create-alpine.sh
+
 build:
 	mkdir -p $(BIN_DIR)
 	go build -o $(BIN_DIR)/$(BINARY) $(PKG)
