@@ -1,15 +1,13 @@
 package container
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/michael-duren/boxes/internal/filesystem"
 	"github.com/opencontainers/runtime-spec/specs-go"
-)
-
-const (
-	containerRootDir = "/var/lib/boxes/containers"
 )
 
 type Container struct {
@@ -45,7 +43,30 @@ func New(opts *NewContainerOpts) (*Container, error) {
 }
 
 func exists(containerID string) bool {
-	_, err := os.Stat(filepath.Join(containerRootDir, containerID))
-
+	_, err := os.Stat(filepath.Join(filesystem.ContainerRootDir, containerID))
 	return err == nil
+}
+
+func (c *Container) Save() error {
+	if err := os.MkdirAll(
+		filepath.Join(filesystem.ContainerRootDir, c.State.ID),
+		0755,
+	); err != nil {
+		return fmt.Errorf("create container directory: %w", err)
+	}
+
+	state, err := json.Marshal(c.State)
+	if err != nil {
+		return fmt.Errorf("serialise container state: %w", err)
+	}
+
+	if err := os.WriteFile(
+		filepath.Join(filesystem.ContainerRootDir, c.State.ID, "state.json"),
+		state,
+		0755,
+	); err != nil {
+		return fmt.Errorf("write container state: %w", err)
+	}
+
+	return nil
 }

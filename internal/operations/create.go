@@ -33,12 +33,17 @@ func Create(opts *CreateOpts) error {
 		return fmt.Errorf("unmarshall config: %w", err)
 	}
 
-	if _, err := container.New(&container.NewContainerOpts{
+	cntr, err := container.New(&container.NewContainerOpts{
 		ID:     opts.ID,
 		Bundle: bundle,
 		Spec:   spec,
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("create container: %w", err)
+	}
+
+	if err := cntr.Save(); err != nil {
+		return fmt.Errorf("save container: %w", err)
 	}
 
 	return nil
