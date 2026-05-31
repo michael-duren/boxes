@@ -105,3 +105,21 @@ func Load(id string) (*Container, error) {
 
 	return c, nil
 }
+
+func (c *Container) Delete(force bool) error {
+	if !force && !c.canBeDeleted() {
+		return fmt.Errorf("container cannot be deleted in current state (%s) try using '--force' if this is intentional", c.State.Status)
+	}
+
+	if err := os.RemoveAll(
+		filepath.Join(filesystem.ContainerRootDir, c.State.ID),
+	); err != nil {
+		return fmt.Errorf("delete container directory: %w", err)
+	}
+
+	return nil
+}
+
+func (c *Container) canBeDeleted() bool {
+	return c.State.Status == specs.StateStopped
+}

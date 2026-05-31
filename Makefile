@@ -43,16 +43,22 @@ uninstall:
 
 # CONTAINER SPECIFIC SUB CMDS W EX ARGS
 CONTAINER := mycontainer
-IMG := busybox
+IMG := alpinefs
 
 create:
 	go run $(PKG) create --bundle $(IMG) $(CONTAINER) 
 
 state:
-	go run $(PKG) state $(CONTAINER)
+	go run $(PKG) state $(CONTAINER) | jq
+
+state-broken:
+	go run $(PKG) state 26ede6c5-5103-405b-ac03-348ffc42e35d 
 
 kill:
 	go run $(PKG) kill $(CONTAINER) 9
 
 delete:
 	go run $(PKG) delete $(CONTAINER)
+
+force-delete:
+	go run $(PKG) delete --force $(CONTAINER)
