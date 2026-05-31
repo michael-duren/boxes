@@ -23,7 +23,7 @@ jobs:
           cache: true
 
       - name: Build
-        run: go build cmd/cli
+        run: go build ./cmd/cli
 
       - name: Lint
         uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
