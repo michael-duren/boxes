@@ -70,3 +70,38 @@ func (c *Container) Save() error {
 
 	return nil
 }
+
+func Load(id string) (*Container, error) {
+	s, err := os.ReadFile(
+		filepath.Join(filesystem.ContainerRootDir, id, "state.json"),
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("read state file: %w", err)
+	}
+
+	var state *specs.State
+	if err := json.Unmarshal(s, &state); err != nil {
+		return nil, fmt.Errorf("unmarshal state: %w", err)
+	}
+
+	config, err := os.ReadFile(
+		filepath.Join(state.Bundle, "config.json"),
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("read config file: %w", err)
+	}
+
+	var spec *specs.Spec
+	if err := json.Unmarshal(config, &spec); err != nil {
+		return nil, fmt.Errorf("unmarhsal config: %w", err)
+	}
+
+	c := &Container{
+		State: state,
+		Spec:  spec,
+	}
+
+	return c, nil
+}
