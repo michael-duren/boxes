@@ -3,11 +3,18 @@ package container
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	"github.com/michael-duren/boxes/internal/filesystem"
 	"github.com/opencontainers/runtime-spec/specs-go"
+)
+
+const (
+	initSockFilename      = "init.sock"
+	containerSockfilename = "container.sock"
 )
 
 type Container struct {
@@ -43,13 +50,83 @@ func New(opts *NewContainerOpts) (*Container, error) {
 }
 
 func exists(containerID string) bool {
-	_, err := os.Stat(filepath.Join(filesystem.ContainerRootDir, containerID))
+	dirs := filesystem.GetDirs()
+	_, err := os.Stat(filepath.Join(dirs.State, containerID))
 	return err == nil
+}
+
+func (c *Container) Init() (err error) {
+	// 2. configure cntr
+	// TODO: configure cntr
+
+	// 3. create ipc socket
+	listener, err := net.Listen(
+		"unix",
+		filepath.Join(filesystem.GetDirs().Runtime, c.State.ID, initSockFilename),
+	)
+	defer func() {
+		// TODO: actually add some logging here
+		listenerErr := listener.Close()
+		if listenerErr != nil {
+			if err != nil {
+				err = fmt.Errorf("unable to close unix listener after err: %w occured", err)
+				return
+			}
+			err = listenerErr
+		}
+	}()
+
+	if err != nil {
+		return fmt.Errorf("listen on init sock: %w", err)
+	}
+
+	// 5. reexec
+	cmd := exec.Command("/proc/self/exe", "reexec", c.State.ID)
+
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("reexec container process: %w", err)
+	}
+
+	c.State.Pid = cmd.Process.Pid
+
+	// 6. release container process
+	if err := cmd.Process.Release(); err != nil {
+		return fmt.Errorf("releasing container process: %w", err)
+	}
+
+	// 4. listen
+	conn, err := listener.Accept()
+	if err != nil {
+		return fmt.Errorf("accept on init sock: %w", err)
+	}
+	defer conn.Close()
+
+	b := make([]byte, 128)
+	n, err := conn.Read(b)
+	if err != nil {
+		return fmt.Errorf("read bytes from init sock connection: %w", err)
+	}
+
+	// 10. receive ready
+	msg := string(b[:n])
+	if msg != "ready" {
+		return fmt.Errorf("expecting 'ready' but received '%s'", msg)
+	}
+
+	c.State.Status = specs.StateCreated
+
+	// 11. exit
+	return nil
+
 }
 
 func (c *Container) Save() error {
 	if err := os.MkdirAll(
-		filepath.Join(filesystem.ContainerRootDir, c.State.ID),
+		filepath.Join(filesystem.GetDirs().State, c.State.ID),
 		0755,
 	); err != nil {
 		return fmt.Errorf("create container directory: %w", err)
@@ -61,7 +138,7 @@ func (c *Container) Save() error {
 	}
 
 	if err := os.WriteFile(
-		filepath.Join(filesystem.ContainerRootDir, c.State.ID, "state.json"),
+		filepath.Join(filesystem.GetDirs().State, c.State.ID, "state.json"),
 		state,
 		0755,
 	); err != nil {
@@ -73,7 +150,7 @@ func (c *Container) Save() error {
 
 func Load(id string) (*Container, error) {
 	s, err := os.ReadFile(
-		filepath.Join(filesystem.ContainerRootDir, id, "state.json"),
+		filepath.Join(filesystem.GetDirs().State, id, "state.json"),
 	)
 
 	if err != nil {
@@ -112,7 +189,7 @@ func (c *Container) Delete(force bool) error {
 	}
 
 	if err := os.RemoveAll(
-		filepath.Join(filesystem.ContainerRootDir, c.State.ID),
+		filepath.Join(filesystem.GetDirs().State, c.State.ID),
 	); err != nil {
 		return fmt.Errorf("delete container directory: %w", err)
 	}
