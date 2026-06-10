@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"syscall"
 
 	"github.com/michael-duren/boxes/internal/filesystem"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -196,6 +197,79 @@ func (c *Container) Delete(force bool) error {
 	}
 
 	return nil
+}
+
+func (c *Container) Reexec() error {
+	// TODO configure cntr
+
+	// send ready
+	dirs := filesystem.GetDirs()
+	initConn, err := net.Dial(
+		"unix",
+		filepath.Join(dirs.Runtime, c.State.ID, initSockFilename),
+	)
+	if err != nil {
+		return fmt.Errorf("dial init sock: %w", err)
+	}
+
+	// signal to runtime container is ready
+	if _, err := initConn.Write([]byte("ready")); err != nil {
+		return fmt.Errorf("write 'ready' msg to init sock: %w", err)
+	}
+
+	_ = initConn.Close()
+
+	// open a unix socket
+	listener, err := net.Listen(
+		"unix",
+		filepath.Join(dirs.Runtime, c.State.ID, containerSockfilename),
+	)
+	if err != nil {
+		return fmt.Errorf("listen on container sock: %w", err)
+	}
+
+	containerConn, err := listener.Accept()
+	if err != nil {
+		return fmt.Errorf("accept on container sock: %w", err)
+	}
+
+	b := make([]byte, 128)
+	n, err := containerConn.Read(b)
+	if err != nil {
+		return fmt.Errorf("read bytes from container sock: %w", err)
+	}
+
+	// if we received msg from runtime to start continue
+	msg := string(b[:n])
+	if msg != "start" {
+		return fmt.Errorf("expecting 'start' but received '%s'", msg)
+	}
+
+	_ = containerConn.Close()
+	_ = listener.Close()
+
+	// cmd may or may not be an absolute path to bin, so we need to get an abs path to it
+	bin, err := exec.LookPath(c.Spec.Process.Args[0])
+	if err != nil {
+		return fmt.Errorf("find path of user process binary: %w", err)
+	}
+
+	// NOTE: any cmd args
+	args := c.Spec.Process.Args
+	// WARN: this is the same as the host env
+	// TODO: fix to
+	env := os.Environ()
+
+	// NOTE: calling a system call execve int execve(const char *pathname, char *const argv[], char *const envp[]);
+	// execve syscall throws away processes memory img (stack, heap) and loads new one in place, essentially overwriting
+	// THIS process with the specified cmd but keeping things like PID the same. Read `man execve` for more info.
+	if err := syscall.Exec(bin, args, env); err != nil {
+		return fmt.Errorf("execve (%s, %s, %v): %w", bin, args, env, err)
+	}
+
+	// NOTE: the process should have overwritten this current process
+	// if execve was successful
+	panic("the call to execve was not successful and an error was not returned.")
 }
 
 func (c *Container) canBeDeleted() bool {
