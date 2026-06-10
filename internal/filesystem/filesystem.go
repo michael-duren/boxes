@@ -21,7 +21,7 @@ var runtimeDirs Dirs
 
 func init() {
 	runtimeDirs = getDirs()
-	err := runtimeDirs.EnsureAll()
+	err := runtimeDirs.ensureAll()
 	if err != nil {
 		panic(fmt.Sprintf("error occurred initializing runtime: %v", err))
 	}
@@ -31,7 +31,7 @@ func GetDirs() Dirs {
 	return runtimeDirs
 }
 
-func (d Dirs) EnsureAll() error {
+func (d Dirs) ensureAll() error {
 	for _, dir := range []string{d.Config, d.Data, d.State, d.Cache, d.Runtime} {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return err

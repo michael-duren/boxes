@@ -64,8 +64,12 @@ func (c *Container) Init() (err error) {
 		"unix",
 		filepath.Join(filesystem.GetDirs().Runtime, c.State.ID, initSockFilename),
 	)
+
+	if err != nil {
+		return fmt.Errorf("listen on init sock: %w", err)
+	}
+
 	defer func() {
-		// TODO: actually add some logging here
 		listenerErr := listener.Close()
 		if listenerErr != nil {
 			if err != nil {
@@ -76,11 +80,9 @@ func (c *Container) Init() (err error) {
 		}
 	}()
 
-	if err != nil {
-		return fmt.Errorf("listen on init sock: %w", err)
-	}
-
 	// 5. reexec
+	// proc filesystem is pseudo-fs, /self/exe is a link
+	// to the cntr runtime itself
 	cmd := exec.Command("/proc/self/exe", "reexec", c.State.ID)
 
 	cmd.Stdin = os.Stdin
@@ -121,7 +123,6 @@ func (c *Container) Init() (err error) {
 
 	// 11. exit
 	return nil
-
 }
 
 func (c *Container) Save() error {
