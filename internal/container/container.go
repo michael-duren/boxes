@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/michael-duren/boxes/internal/errs"
 	"github.com/michael-duren/boxes/internal/filesystem"
 	"github.com/opencontainers/runtime-spec/specs-go"
 )
@@ -70,17 +71,7 @@ func (c *Container) Init() (err error) {
 		return fmt.Errorf("listen on init sock: %w", err)
 	}
 
-	defer func() {
-		listenerErr := listener.Close()
-		if listenerErr != nil {
-			if err != nil {
-				err = fmt.Errorf("unable to close unix listener after err: %w occured", err)
-				return
-			}
-			err = listenerErr
-		}
-	}()
-
+	defer errs.WrapDeferedClose(listener, &err)
 	// 5. reexec
 	// proc filesystem is pseudo-fs, /self/exe is a link
 	// to the cntr runtime itself
@@ -90,14 +81,14 @@ func (c *Container) Init() (err error) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	if err := cmd.Start(); err != nil {
+	if err = cmd.Start(); err != nil {
 		return fmt.Errorf("reexec container process: %w", err)
 	}
 
 	c.State.Pid = cmd.Process.Pid
 
 	// 6. release container process
-	if err := cmd.Process.Release(); err != nil {
+	if err = cmd.Process.Release(); err != nil {
 		return fmt.Errorf("releasing container process: %w", err)
 	}
 
@@ -106,7 +97,7 @@ func (c *Container) Init() (err error) {
 	if err != nil {
 		return fmt.Errorf("accept on init sock: %w", err)
 	}
-	defer conn.Close()
+	defer errs.WrapDeferedClose(conn, &err)
 
 	b := make([]byte, 128)
 	n, err := conn.Read(b)
