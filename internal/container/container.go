@@ -189,7 +189,10 @@ func (c *Container) Delete(force bool) error {
 	// kill process
 	// TODO: note find win ver
 	if process != nil {
-		process.Signal(unix.SIGKILL)
+		err := process.Signal(unix.SIGKILL)
+		if err != nil {
+			return fmt.Errorf("unable to kill container process: %w", err)
+		}
 	}
 
 	if err := os.RemoveAll(
@@ -294,9 +297,12 @@ func (c *Container) Start() error {
 	if _, err := conn.Write([]byte("start")); err != nil {
 		return fmt.Errorf("write 'start' msg to container sock: %w", err)
 	}
-	conn.Close()
-
+	err = conn.Close()
 	c.State.Status = specs.StateRunning
+
+	if err != nil {
+		return fmt.Errorf("unable to close connection with container process after start msg: %w", err)
+	}
 
 	return nil
 }
