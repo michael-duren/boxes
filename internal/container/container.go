@@ -12,6 +12,7 @@ import (
 	"github.com/michael-duren/boxes/internal/errs"
 	"github.com/michael-duren/boxes/internal/filesystem"
 	"github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -181,6 +182,16 @@ func (c *Container) Delete(force bool) error {
 		return fmt.Errorf("container cannot be deleted in current state (%s) try using '--force' if this is intentional", c.State.Status)
 	}
 
+	process, err := os.FindProcess(c.State.Pid)
+	if err != nil {
+		return fmt.Errorf("find container process to delete: %w", err)
+	}
+	// kill process
+	// TODO: note find win ver
+	if process != nil {
+		process.Signal(unix.SIGKILL)
+	}
+
 	if err := os.RemoveAll(
 		filepath.Join(filesystem.GetDirs().State, c.State.ID),
 	); err != nil {
@@ -263,6 +274,37 @@ func (c *Container) Reexec() error {
 	panic("the call to execve was not successful and an error was not returned.")
 }
 
+func (c *Container) Start() error {
+	if c.Spec.Process == nil {
+		return nil
+	}
+
+	if !c.canBeStarted() {
+		return fmt.Errorf("container cannot be started in current state (%s)", c.State.Status)
+	}
+
+	conn, err := net.Dial(
+		"unix",
+		filepath.Join(filesystem.GetDirs().Runtime, c.State.ID, containerSockfilename),
+	)
+	if err != nil {
+		return fmt.Errorf("dial container sock: %w", err)
+	}
+
+	if _, err := conn.Write([]byte("start")); err != nil {
+		return fmt.Errorf("write 'start' msg to container sock: %w", err)
+	}
+	conn.Close()
+
+	c.State.Status = specs.StateRunning
+
+	return nil
+}
+
 func (c *Container) canBeDeleted() bool {
 	return c.State.Status == specs.StateStopped
+}
+
+func (c *Container) canBeStarted() bool {
+	return c.State.Status == specs.StateCreated
 }
