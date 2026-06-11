@@ -64,7 +64,7 @@ func listenUnix(sockPath string) (net.Listener, error) {
 		return nil, fmt.Errorf("unable to create socket directory: %w", err)
 	}
 
-	if err := os.Remove(sockPath); err != nil && os.IsNotExist(err) {
+	if err := os.Remove(sockPath); err != nil && !os.IsNotExist(err) {
 		return nil, fmt.Errorf("remove stale sock: %w", err)
 	}
 
