@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/michael-duren/boxes/internal/errs"
 	"github.com/michael-duren/boxes/internal/filesystem"
@@ -58,18 +59,34 @@ func exists(containerID string) bool {
 	return err == nil
 }
 
+func listenUnix(sockPath string) (net.Listener, error) {
+	if err := os.MkdirAll(filepath.Dir(sockPath), 0755); err != nil {
+		return nil, fmt.Errorf("unable to create socket directory: %w", err)
+	}
+
+	if err := os.Remove(sockPath); err != nil && os.IsNotExist(err) {
+		return nil, fmt.Errorf("remove stale sock: %w", err)
+	}
+
+	listener, err := net.Listen(
+		"unix",
+		sockPath,
+	)
+
+	if err != nil {
+		return nil, fmt.Errorf("listen on init sock: %w", err)
+	}
+	return listener, nil
+}
+
 func (c *Container) Init() (err error) {
 	// 2. configure cntr
 	// TODO: configure cntr
 
-	// 3. create ipc socket
-	listener, err := net.Listen(
-		"unix",
-		filepath.Join(filesystem.GetDirs().Runtime, c.State.ID, initSockFilename),
-	)
-
+	sockPath := filepath.Join(filesystem.GetDirs().Runtime, c.State.ID, initSockFilename)
+	listener, err := listenUnix(sockPath)
 	if err != nil {
-		return fmt.Errorf("listen on init sock: %w", err)
+		return err
 	}
 
 	defer errs.WrapDeferedClose(listener, &err)
@@ -91,6 +108,10 @@ func (c *Container) Init() (err error) {
 	// 6. release container process
 	if err = cmd.Process.Release(); err != nil {
 		return fmt.Errorf("releasing container process: %w", err)
+	}
+	// set deadline
+	if ul, ok := listener.(*net.UnixListener); ok {
+		ul.SetDeadline(time.Now().Add(10 * time.Second))
 	}
 
 	// 4. listen
@@ -187,7 +208,6 @@ func (c *Container) Delete(force bool) error {
 		return fmt.Errorf("find container process to delete: %w", err)
 	}
 	// kill process
-	// TODO: note find win ver
 	if process != nil {
 		err := process.Signal(unix.SIGKILL)
 		if err != nil {
@@ -195,10 +215,16 @@ func (c *Container) Delete(force bool) error {
 		}
 	}
 
+	// remove state file
 	if err := os.RemoveAll(
 		filepath.Join(filesystem.GetDirs().State, c.State.ID),
 	); err != nil {
 		return fmt.Errorf("delete container directory: %w", err)
+	}
+
+	dir := filepath.Join(filesystem.GetDirs().Runtime, c.State.ID)
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("remove container runtime dir: %w", err)
 	}
 
 	return nil
