@@ -6,17 +6,24 @@ import (
 )
 
 func deleteCmd() *cobra.Command {
-	cmd := &cobra.Command{
+	var delCmd = &cobra.Command{
 		Use:  "delete [flags] CONTAINER_ID",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			containerID := args[0]
 
+			force, err := cmd.Flags().GetBool("force")
+			if err != nil {
+				return err
+			}
+
 			return operations.Delete(&operations.DeleteOpts{
-				ID: containerID,
+				ID:    containerID,
+				Force: force,
 			})
 		},
 	}
 
-	return cmd
+	delCmd.Flags().Bool("force", false, "force delete a container")
+	return delCmd
 }
