@@ -111,7 +111,10 @@ func (c *Container) Init() (err error) {
 	}
 	// set deadline
 	if ul, ok := listener.(*net.UnixListener); ok {
-		ul.SetDeadline(time.Now().Add(10 * time.Second))
+		err = ul.SetDeadline(time.Now().Add(10 * time.Second))
+		if err != nil {
+			return fmt.Errorf("unable to set deadline for runtime listener: %w", err)
+		}
 	}
 
 	// 4. listen
