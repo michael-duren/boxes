@@ -12,6 +12,7 @@ import (
 
 	"github.com/michael-duren/boxes/internal/errs"
 	"github.com/michael-duren/boxes/internal/filesystem"
+	"github.com/michael-duren/boxes/internal/hooks"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 )
@@ -79,9 +80,42 @@ func listenUnix(sockPath string) (net.Listener, error) {
 	return listener, nil
 }
 
+func (c *Container) execHooks(he hooks.HookEvent) error {
+	if c.Spec.Hooks != nil {
+		var h []specs.Hook
+		switch he {
+		case hooks.Prestart:
+			h = c.Spec.Hooks.Prestart
+		case hooks.CreateRuntime:
+			h = c.Spec.Hooks.CreateContainer
+		case hooks.CreateContainer:
+			h = c.Spec.Hooks.CreateContainer
+		case hooks.StartContainer:
+			h = c.Spec.Hooks.StartContainer
+		case hooks.Poststart:
+			h = c.Spec.Hooks.Poststart
+		case hooks.Poststop:
+			h = c.Spec.Hooks.Poststop
+		default:
+			return fmt.Errorf("execHook use of unknown hook event: %s", he)
+		}
+		if err := hooks.ExecHooks(
+			h, c.State,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (c *Container) Init() (err error) {
 	// 2. configure cntr
 	// TODO: configure cntr
+	err = c.execHooks(hooks.CreateRuntime)
+
+	if err != nil {
+		return err
+	}
 
 	sockPath := filepath.Join(filesystem.GetDirs().Runtime, c.State.ID, initSockFilename)
 	listener, err := listenUnix(sockPath)
@@ -98,6 +132,12 @@ func (c *Container) Init() (err error) {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+
+	c.execHooks(hooks.CreateContainer)
+
+	if err != nil {
+		return err
+	}
 
 	if err = cmd.Start(); err != nil {
 		return fmt.Errorf("reexec container process: %w", err)
@@ -230,7 +270,7 @@ func (c *Container) Delete(force bool) error {
 		return fmt.Errorf("remove container runtime dir: %w", err)
 	}
 
-	return nil
+	return c.execHooks(hooks.Poststop)
 }
 
 func (c *Container) Reexec() error {
@@ -282,6 +322,13 @@ func (c *Container) Reexec() error {
 	_ = containerConn.Close()
 	_ = listener.Close()
 
+	// NOTE: container hooks now in container namespace
+	err = c.execHooks(hooks.StartContainer)
+
+	if err != nil {
+		return err
+	}
+
 	// cmd may or may not be an absolute path to bin, so we need to get an abs path to it
 	bin, err := exec.LookPath(c.Spec.Process.Args[0])
 	if err != nil {
@@ -315,6 +362,13 @@ func (c *Container) Start() error {
 		return fmt.Errorf("container cannot be started in current state (%s)", c.State.Status)
 	}
 
+	//lint:ignore SA1019 marked as deprecated, but still required by OCI Runtime integration tests and used by other tools like Docker
+	err := c.execHooks(hooks.Prestart)
+
+	if err != nil {
+		return err
+	}
+
 	conn, err := net.Dial(
 		"unix",
 		filepath.Join(filesystem.GetDirs().Runtime, c.State.ID, containerSockfilename),
@@ -333,7 +387,7 @@ func (c *Container) Start() error {
 		return fmt.Errorf("unable to close connection with container process after start msg: %w", err)
 	}
 
-	return nil
+	return c.execHooks(hooks.Poststart)
 }
 
 func (c *Container) canBeDeleted() bool {
