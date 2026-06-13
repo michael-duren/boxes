@@ -85,7 +85,9 @@ func (c *Container) execHooks(he hooks.HookEvent) error {
 		var h []specs.Hook
 		switch he {
 		case hooks.Prestart:
-			h = c.Spec.Hooks.Prestart
+			// SA1019: c.Spec.Hooks.Prestart is deprecated upstream, but still required
+			// by OCI Runtime integration tests and used by other tools like Docker.
+			h = c.Spec.Hooks.Prestart //nolint:staticcheck
 		case hooks.CreateRuntime:
 			h = c.Spec.Hooks.CreateContainer
 		case hooks.CreateContainer:
@@ -133,7 +135,7 @@ func (c *Container) Init() (err error) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	c.execHooks(hooks.CreateContainer)
+	err = c.execHooks(hooks.CreateContainer)
 
 	if err != nil {
 		return err
@@ -362,7 +364,6 @@ func (c *Container) Start() error {
 		return fmt.Errorf("container cannot be started in current state (%s)", c.State.Status)
 	}
 
-	//lint:ignore SA1019 marked as deprecated, but still required by OCI Runtime integration tests and used by other tools like Docker
 	err := c.execHooks(hooks.Prestart)
 
 	if err != nil {

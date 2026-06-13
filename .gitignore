@@ -31,4 +31,4 @@ go.work.sum
 # .idea/
 # .vscode/
 bin
-alpinefs/
+rootfs/

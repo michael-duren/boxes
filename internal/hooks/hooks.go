@@ -15,12 +15,16 @@ import (
 type HookEvent string
 
 const (
-	// Prestart is Deprecated. Prestart is a list of hooks to be run before the container process is executed.
-	// It is called in the Runtime Namespace
+	// Prestart is a list of hooks to be run before the container process is executed.
+	// It is called in the Runtime Namespace.
 	//
-	// Deprecated: use [Hooks.CreateRuntime], [Hooks.CreateContainer], and
-	// [Hooks.StartContainer] instead, which allow more granular hook control
-	// during the create and start phase.
+	// NOTE: this corresponds to the OCI "prestart" hook, which the runtime-spec
+	// marks deprecated in favour of CreateRuntime, CreateContainer, and
+	// StartContainer. We intentionally still support it because the OCI Runtime
+	// integration tests and other tools (e.g. Docker) continue to rely on it.
+	// The doc comment deliberately avoids the "Deprecated:" prefix so this
+	// project's own symbol does not trip deprecation analyzers; the upstream
+	// field access is suppressed separately at its use site.
 	Prestart HookEvent = "Prestart"
 
 	// CreateRuntime is a list of hooks to be run after the container has been created but before pivot_root or any equivalent operation has been called
