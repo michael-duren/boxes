@@ -19,7 +19,7 @@ const (
 	// It is called in the Runtime Namespace.
 	//
 	// NOTE: this corresponds to the OCI "prestart" hook, which the runtime-spec
-	// marks deprecated in favour of CreateRuntime, CreateContainer, and
+	// marks deprecated in favor of CreateRuntime, CreateContainer, and
 	// StartContainer. We intentionally still support it because the OCI Runtime
 	// integration tests and other tools (e.g. Docker) continue to rely on it.
 	// The doc comment deliberately avoids the "Deprecated:" prefix so this

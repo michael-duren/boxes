@@ -3,6 +3,7 @@ package container
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -10,9 +11,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/michael-duren/boxes/internal/hooks"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
+	"github.com/michael-duren/boxes/internal/hooks"
 
 	"github.com/michael-duren/boxes/internal/errs"
 	"github.com/michael-duren/boxes/internal/filesystem"
@@ -197,10 +199,11 @@ func (c *Container) Delete(force bool) error {
 	}
 	// kill process
 	if process != nil {
-		err := process.Signal(unix.SIGKILL)
-		if err != nil {
-			// TODO: log
-			// return fmt.Errorf("unable to kill container process: %w", err)
+		if err := process.Signal(unix.SIGKILL); err != nil {
+			// The process may already be gone; log and continue with cleanup
+			// rather than aborting the delete.
+			slog.Warn("kill container process during delete",
+				"id", c.State.ID, "err", err)
 		}
 	}
 
