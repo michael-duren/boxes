@@ -94,7 +94,7 @@ func (c *Container) Init() (err error) {
 
 	if err = cmd.Start(); err != nil {
 		slog.Error("failed to start reexec container process", "id", c.State.ID, "err", err)
-		return fmt.Errorf("reexec container process: %w", err)
+		return c.cleanupOnErr(fmt.Errorf("reexec container process: %w", err))
 	}
 
 	c.State.Pid = cmd.Process.Pid
@@ -103,14 +103,14 @@ func (c *Container) Init() (err error) {
 	// 6. release container process
 	if err = cmd.Process.Release(); err != nil {
 		slog.Error("failed to release container process", "id", c.State.ID, "pid", c.State.Pid, "err", err)
-		return fmt.Errorf("releasing container process: %w", err)
+		return c.cleanupOnErr(fmt.Errorf("releasing container process: %w", err))
 	}
 	// set deadline
 	if ul, ok := listener.(*net.UnixListener); ok {
 		err = ul.SetDeadline(time.Now().Add(10 * time.Second))
 		if err != nil {
 			slog.Error("failed to set deadline for runtime listener", "id", c.State.ID, "err", err)
-			return fmt.Errorf("unable to set deadline for runtime listener: %w", err)
+			return c.cleanupOnErr(fmt.Errorf("unable to set deadline for runtime listener: %w", err))
 		}
 	}
 
@@ -119,7 +119,7 @@ func (c *Container) Init() (err error) {
 	conn, err := listener.Accept()
 	if err != nil {
 		slog.Error("failed to accept on init sock", "id", c.State.ID, "err", err)
-		return fmt.Errorf("accept on init sock: %w", err)
+		return c.cleanupOnErr(fmt.Errorf("accept on init sock: %w", err))
 	}
 	defer errs.WrapDeferedClose(conn, &err)
 
@@ -127,14 +127,14 @@ func (c *Container) Init() (err error) {
 	n, err := conn.Read(b)
 	if err != nil {
 		slog.Error("failed to read from init sock connection", "id", c.State.ID, "err", err)
-		return fmt.Errorf("read bytes from init sock connection: %w", err)
+		return c.cleanupOnErr(fmt.Errorf("read bytes from init sock connection: %w", err))
 	}
 
 	// 10. receive ready
 	msg := string(b[:n])
 	if msg != "ready" {
 		slog.Error("unexpected message on init sock", "id", c.State.ID, "want", "ready", "got", msg)
-		return fmt.Errorf("expecting 'ready' but received '%s'", msg)
+		return c.cleanupOnErr(fmt.Errorf("expecting 'ready' but received '%s'", msg))
 	}
 
 	c.State.Status = specs.StateCreated
@@ -414,9 +414,19 @@ func (c *Container) Start() error {
 }
 
 // cleanupOnErr - if an error occurs during the creation of a container
-// this method will cleanup and wrap the original error if cleanup fails
+// this method kills any started container process and removes its state and
+// runtime files. It returns the original error, wrapping it if cleanup fails.
 func (c *Container) cleanupOnErr(err error) error {
 	slog.Warn("cleaning up container after error", "id", c.State.ID, "err", err)
+
+	// If we already reexec'd a container process, kill it so we don't leak an
+	// orphan that outlives its state files. ESRCH means it's already gone.
+	if c.State.Pid != 0 {
+		if killErr := unix.Kill(c.State.Pid, unix.SIGKILL); killErr != nil && killErr != unix.ESRCH {
+			slog.Error("failed to kill container process during cleanup", "id", c.State.ID, "pid", c.State.Pid, "err", killErr)
+		}
+	}
+
 	rmErr := c.removeContainerFiles()
 	if rmErr != nil {
 		slog.Error("failed to cleanup container files after error", "id", c.State.ID, "cleanupErr", rmErr, "originalErr", err)
