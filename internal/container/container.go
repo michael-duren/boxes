@@ -37,7 +37,10 @@ type NewContainerOpts struct {
 }
 
 func New(opts *NewContainerOpts) (*Container, error) {
+	slog.Debug("creating new container", "id", opts.ID, "bundle", opts.Bundle)
+
 	if exists(opts.ID) {
+		slog.Warn("container already exists", "id", opts.ID)
 		return nil, fmt.Errorf("container '%s' exists", opts.ID)
 	}
 
@@ -54,10 +57,14 @@ func New(opts *NewContainerOpts) (*Container, error) {
 		Spec:  opts.Spec,
 	}
 
+	slog.Debug("container initialized", "id", opts.ID, "status", state.Status)
+
 	return &c, nil
 }
 
 func (c *Container) Init() (err error) {
+	slog.Info("initializing container", "id", c.State.ID, "bundle", c.State.Bundle)
+
 	// 2. configure cntr
 	// TODO: configure cntr
 	err = c.execHooks(hooks.CreateRuntime)
@@ -67,8 +74,10 @@ func (c *Container) Init() (err error) {
 	}
 
 	sockPath := filepath.Join(filesystem.GetDirs().Runtime, c.State.ID, initSockFilename)
+	slog.Debug("listening on init sock", "id", c.State.ID, "path", sockPath)
 	listener, err := listenUnix(sockPath)
 	if err != nil {
+		slog.Error("failed to listen on init sock", "id", c.State.ID, "path", sockPath, "err", err)
 		return c.cleanupOnErr(err)
 	}
 
@@ -76,6 +85,7 @@ func (c *Container) Init() (err error) {
 	// 5. reexec
 	// proc filesystem is pseudo-fs, /self/exe is a link
 	// to the cntr runtime itself
+	slog.Debug("reexecing container process", "id", c.State.ID)
 	cmd := exec.Command("/proc/self/exe", "reexec", c.State.ID)
 
 	cmd.Stdin = os.Stdin
@@ -83,26 +93,32 @@ func (c *Container) Init() (err error) {
 	cmd.Stderr = os.Stderr
 
 	if err = cmd.Start(); err != nil {
+		slog.Error("failed to start reexec container process", "id", c.State.ID, "err", err)
 		return fmt.Errorf("reexec container process: %w", err)
 	}
 
 	c.State.Pid = cmd.Process.Pid
+	slog.Debug("reexec container process started", "id", c.State.ID, "pid", c.State.Pid)
 
 	// 6. release container process
 	if err = cmd.Process.Release(); err != nil {
+		slog.Error("failed to release container process", "id", c.State.ID, "pid", c.State.Pid, "err", err)
 		return fmt.Errorf("releasing container process: %w", err)
 	}
 	// set deadline
 	if ul, ok := listener.(*net.UnixListener); ok {
 		err = ul.SetDeadline(time.Now().Add(10 * time.Second))
 		if err != nil {
+			slog.Error("failed to set deadline for runtime listener", "id", c.State.ID, "err", err)
 			return fmt.Errorf("unable to set deadline for runtime listener: %w", err)
 		}
 	}
 
 	// 4. listen
+	slog.Debug("waiting for container process to connect on init sock", "id", c.State.ID)
 	conn, err := listener.Accept()
 	if err != nil {
+		slog.Error("failed to accept on init sock", "id", c.State.ID, "err", err)
 		return fmt.Errorf("accept on init sock: %w", err)
 	}
 	defer errs.WrapDeferedClose(conn, &err)
@@ -110,31 +126,38 @@ func (c *Container) Init() (err error) {
 	b := make([]byte, 128)
 	n, err := conn.Read(b)
 	if err != nil {
+		slog.Error("failed to read from init sock connection", "id", c.State.ID, "err", err)
 		return fmt.Errorf("read bytes from init sock connection: %w", err)
 	}
 
 	// 10. receive ready
 	msg := string(b[:n])
 	if msg != "ready" {
+		slog.Error("unexpected message on init sock", "id", c.State.ID, "want", "ready", "got", msg)
 		return fmt.Errorf("expecting 'ready' but received '%s'", msg)
 	}
 
 	c.State.Status = specs.StateCreated
+	slog.Info("container created", "id", c.State.ID, "pid", c.State.Pid, "status", c.State.Status)
 
 	// 11. exit
 	return nil
 }
 
 func (c *Container) Save() error {
+	slog.Debug("saving container state", "id", c.State.ID, "status", c.State.Status)
+
 	if err := os.MkdirAll(
 		filepath.Join(filesystem.GetDirs().State, c.State.ID),
 		0755,
 	); err != nil {
+		slog.Error("failed to create container directory", "id", c.State.ID, "err", err)
 		return fmt.Errorf("create container directory: %w", err)
 	}
 
 	state, err := json.Marshal(c.State)
 	if err != nil {
+		slog.Error("failed to serialize container state", "id", c.State.ID, "err", err)
 		return fmt.Errorf("serialize container state: %w", err)
 	}
 
@@ -143,23 +166,29 @@ func (c *Container) Save() error {
 		state,
 		0755,
 	); err != nil {
+		slog.Error("failed to write container state", "id", c.State.ID, "err", err)
 		return fmt.Errorf("write container state: %w", err)
 	}
 
+	slog.Debug("container state saved", "id", c.State.ID)
 	return nil
 }
 
 func Load(id string) (*Container, error) {
+	slog.Debug("loading container", "id", id)
+
 	s, err := os.ReadFile(
 		filepath.Join(filesystem.GetDirs().State, id, "state.json"),
 	)
 
 	if err != nil {
+		slog.Error("failed to read state file", "id", id, "err", err)
 		return nil, fmt.Errorf("read state file: %w", err)
 	}
 
 	var state *specs.State
 	if err := json.Unmarshal(s, &state); err != nil {
+		slog.Error("failed to unmarshal state", "id", id, "err", err)
 		return nil, fmt.Errorf("unmarshal state: %w", err)
 	}
 
@@ -168,11 +197,13 @@ func Load(id string) (*Container, error) {
 	)
 
 	if err != nil {
+		slog.Error("failed to read config file", "id", id, "bundle", state.Bundle, "err", err)
 		return nil, fmt.Errorf("read config file: %w", err)
 	}
 
 	var spec *specs.Spec
 	if err := json.Unmarshal(config, &spec); err != nil {
+		slog.Error("failed to unmarshal config", "id", id, "err", err)
 		return nil, fmt.Errorf("unmarhsal config: %w", err)
 	}
 
@@ -181,6 +212,7 @@ func Load(id string) (*Container, error) {
 		Spec:  spec,
 	}
 
+	slog.Debug("container loaded", "id", id, "status", state.Status, "pid", state.Pid)
 	return c, nil
 }
 
@@ -189,16 +221,21 @@ func (c *Container) canBeDeleted() bool {
 }
 
 func (c *Container) Delete(force bool) error {
+	slog.Info("deleting container", "id", c.State.ID, "force", force, "status", c.State.Status)
+
 	if !force && !c.canBeDeleted() {
+		slog.Warn("container cannot be deleted in current state", "id", c.State.ID, "status", c.State.Status)
 		return fmt.Errorf("container cannot be deleted in current state (%s) try using '--force' if this is intentional", c.State.Status)
 	}
 
 	process, err := os.FindProcess(c.State.Pid)
 	if err != nil {
+		slog.Error("failed to find container process to delete", "id", c.State.ID, "pid", c.State.Pid, "err", err)
 		return fmt.Errorf("find container process to delete: %w", err)
 	}
 	// kill process
 	if process != nil {
+		slog.Debug("killing container process", "id", c.State.ID, "pid", c.State.Pid)
 		if err := process.Signal(unix.SIGKILL); err != nil {
 			// The process may already be gone; log and continue with cleanup
 			// rather than aborting the delete.
@@ -210,28 +247,34 @@ func (c *Container) Delete(force bool) error {
 	err = c.execHooks(hooks.Poststop)
 
 	if err != nil {
-		// TODO: add logging
-		return err
+		slog.Error("error during post stop hook execution", "id", c.State.ID, "error", err)
 	}
 
+	slog.Debug("removing container files", "id", c.State.ID)
 	return c.removeContainerFiles()
 }
 
 func (c *Container) Reexec() error {
+	slog.Info("reexec started in container process", "id", c.State.ID, "pid", os.Getpid())
+
 	// TODO: configure cntr
 
 	// send ready
 	dirs := filesystem.GetDirs()
+	slog.Debug("dialing init sock", "id", c.State.ID)
 	initConn, err := net.Dial(
 		"unix",
 		filepath.Join(dirs.Runtime, c.State.ID, initSockFilename),
 	)
 	if err != nil {
+		slog.Error("failed to dial init sock", "id", c.State.ID, "err", err)
 		return fmt.Errorf("dial init sock: %w", err)
 	}
 
 	// signal to runtime container is ready
+	slog.Debug("sending 'ready' to runtime", "id", c.State.ID)
 	if _, err := initConn.Write([]byte("ready")); err != nil {
+		slog.Error("failed to write 'ready' to init sock", "id", c.State.ID, "err", err)
 		return fmt.Errorf("write 'ready' msg to init sock: %w", err)
 	}
 
@@ -246,31 +289,37 @@ func (c *Container) Reexec() error {
 
 	// open a unix socket this will continue to listen until the user or system
 	// executes start
+	slog.Debug("listening on container sock, waiting for start", "id", c.State.ID)
 	listener, err := net.Listen(
 		"unix",
 		filepath.Join(dirs.Runtime, c.State.ID, containerSockfilename),
 	)
 
 	if err != nil {
+		slog.Error("failed to listen on container sock", "id", c.State.ID, "err", err)
 		return fmt.Errorf("listen on container sock: %w", err)
 	}
 
 	containerConn, err := listener.Accept()
 	if err != nil {
+		slog.Error("failed to accept on container sock", "id", c.State.ID, "err", err)
 		return fmt.Errorf("accept on container sock: %w", err)
 	}
 
 	b := make([]byte, 128)
 	n, err := containerConn.Read(b)
 	if err != nil {
+		slog.Error("failed to read from container sock", "id", c.State.ID, "err", err)
 		return fmt.Errorf("read bytes from container sock: %w", err)
 	}
 
 	// if we received msg from runtime to start continue
 	msg := string(b[:n])
 	if msg != "start" {
+		slog.Error("unexpected message on container sock", "id", c.State.ID, "want", "start", "got", msg)
 		return fmt.Errorf("expecting 'start' but received '%s'", msg)
 	}
+	slog.Debug("received 'start' from runtime", "id", c.State.ID)
 
 	_ = containerConn.Close()
 	_ = listener.Close()
@@ -285,6 +334,7 @@ func (c *Container) Reexec() error {
 	// cmd may or may not be an absolute path to bin, so we need to get an abs path to it
 	bin, err := exec.LookPath(c.Spec.Process.Args[0])
 	if err != nil {
+		slog.Error("failed to find path of user process binary", "id", c.State.ID, "bin", c.Spec.Process.Args[0], "err", err)
 		return fmt.Errorf("find path of user process binary: %w", err)
 	}
 
@@ -297,7 +347,9 @@ func (c *Container) Reexec() error {
 	// NOTE: calling a system call execve int execve(const char *pathname, char *const argv[], char *const envp[]);
 	// execve syscall throws away processes memory img (stack, heap) and loads new one in place, essentially overwriting
 	// THIS process with the specified cmd but keeping things like PID the same. Read `man execve` for more info.
+	slog.Info("executing user process", "id", c.State.ID, "bin", bin, "args", args)
 	if err := syscall.Exec(bin, args, env); err != nil {
+		slog.Error("execve failed", "id", c.State.ID, "bin", bin, "err", err)
 		return fmt.Errorf("execve (%s, %s, %v): %w", bin, args, env, err)
 	}
 
@@ -311,11 +363,15 @@ func (c *Container) canBeStarted() bool {
 }
 
 func (c *Container) Start() error {
+	slog.Info("starting container", "id", c.State.ID, "status", c.State.Status)
+
 	if c.Spec.Process == nil {
+		slog.Debug("no process in spec, nothing to start", "id", c.State.ID)
 		return nil
 	}
 
 	if !c.canBeStarted() {
+		slog.Warn("container cannot be started in current state", "id", c.State.ID, "status", c.State.Status)
 		return fmt.Errorf("container cannot be started in current state (%s)", c.State.Status)
 	}
 
@@ -325,39 +381,45 @@ func (c *Container) Start() error {
 		return err
 	}
 
+	slog.Debug("dialing container sock to send start", "id", c.State.ID)
 	conn, err := net.Dial(
 		"unix",
 		filepath.Join(filesystem.GetDirs().Runtime, c.State.ID, containerSockfilename),
 	)
 	if err != nil {
+		slog.Error("failed to dial container sock", "id", c.State.ID, "err", err)
 		return fmt.Errorf("dial container sock: %w", err)
 	}
 
 	if _, err := conn.Write([]byte("start")); err != nil {
+		slog.Error("failed to write 'start' to container sock", "id", c.State.ID, "err", err)
 		return fmt.Errorf("write 'start' msg to container sock: %w", err)
 	}
 	err = conn.Close()
 	c.State.Status = specs.StateRunning
 
 	if err != nil {
+		slog.Error("failed to close connection after start msg", "id", c.State.ID, "err", err)
 		return fmt.Errorf("unable to close connection with container process after start msg: %w", err)
 	}
 
 	err = c.execHooks(hooks.Poststart)
 
-	// TODO: add logging
 	if err != nil {
 		return err
 	}
 
+	slog.Info("container started", "id", c.State.ID, "status", c.State.Status)
 	return nil
 }
 
 // cleanupOnErr - if an error occurs during the creation of a container
 // this method will cleanup and wrap the original error if cleanup fails
 func (c *Container) cleanupOnErr(err error) error {
+	slog.Warn("cleaning up container after error", "id", c.State.ID, "err", err)
 	rmErr := c.removeContainerFiles()
 	if rmErr != nil {
+		slog.Error("failed to cleanup container files after error", "id", c.State.ID, "cleanupErr", rmErr, "originalErr", err)
 		return fmt.Errorf("cleanup on err unable to cleanup container state and runtime files: %w", err)
 	}
 	return err
@@ -365,16 +427,22 @@ func (c *Container) cleanupOnErr(err error) error {
 
 // removeContainerFiles - removes state and runtime files of a container
 func (c *Container) removeContainerFiles() error {
+	slog.Debug("removing container state and runtime files", "id", c.State.ID)
+
 	if err := os.RemoveAll(
 		filepath.Join(filesystem.GetDirs().State, c.State.ID),
 	); err != nil {
+		slog.Error("failed to delete container state directory", "id", c.State.ID, "err", err)
 		return fmt.Errorf("delete container directory: %w", err)
 	}
 
 	dir := filepath.Join(filesystem.GetDirs().Runtime, c.State.ID)
 	if err := os.RemoveAll(dir); err != nil {
+		slog.Error("failed to remove container runtime directory", "id", c.State.ID, "dir", dir, "err", err)
 		return fmt.Errorf("remove container runtime dir: %w", err)
 	}
+
+	slog.Debug("container files removed", "id", c.State.ID)
 	return nil
 }
 
@@ -382,31 +450,43 @@ func (c *Container) removeContainerFiles() error {
 //
 // execHooks calls the [hooks.ExecHooks] method
 func (c *Container) execHooks(he hooks.HookEvent) error {
-	if c.Spec.Hooks != nil {
-		var h []specs.Hook
-		switch he {
-		case hooks.Prestart:
-			// SA1019: c.Spec.Hooks.Prestart is deprecated upstream, but still required
-			// by OCI Runtime integration tests and used by other tools like Docker.
-			h = c.Spec.Hooks.Prestart //nolint:staticcheck
-		case hooks.CreateRuntime:
-			h = c.Spec.Hooks.CreateRuntime
-		case hooks.CreateContainer:
-			h = c.Spec.Hooks.CreateContainer
-		case hooks.StartContainer:
-			h = c.Spec.Hooks.StartContainer
-		case hooks.Poststart:
-			h = c.Spec.Hooks.Poststart
-		case hooks.Poststop:
-			h = c.Spec.Hooks.Poststop
-		default:
-			return fmt.Errorf("execHook use of unknown hook event: %s", he)
-		}
-		if err := hooks.ExecHooks(
-			h, c.State,
-		); err != nil {
-			return err
-		}
+	if c.Spec.Hooks == nil {
+		slog.Debug("no hooks defined, skipping", "id", c.State.ID, "event", he)
+		return nil
 	}
+
+	var h []specs.Hook
+	switch he {
+	case hooks.Prestart:
+		// SA1019: c.Spec.Hooks.Prestart is deprecated upstream, but still required
+		// by OCI Runtime integration tests and used by other tools like Docker.
+		h = c.Spec.Hooks.Prestart //nolint:staticcheck
+	case hooks.CreateRuntime:
+		h = c.Spec.Hooks.CreateRuntime
+	case hooks.CreateContainer:
+		h = c.Spec.Hooks.CreateContainer
+	case hooks.StartContainer:
+		h = c.Spec.Hooks.StartContainer
+	case hooks.Poststart:
+		h = c.Spec.Hooks.Poststart
+	case hooks.Poststop:
+		h = c.Spec.Hooks.Poststop
+	default:
+		slog.Error("unknown hook event", "id", c.State.ID, "event", he)
+		return fmt.Errorf("execHook use of unknown hook event: %s", he)
+	}
+
+	if len(h) == 0 {
+		slog.Debug("no hooks for event, skipping", "id", c.State.ID, "event", he)
+		return nil
+	}
+
+	slog.Debug("executing hooks", "id", c.State.ID, "event", he, "count", len(h))
+	if err := hooks.ExecHooks(h, c.State); err != nil {
+		slog.Error("hook execution failed", "id", c.State.ID, "event", he, "err", err)
+		return err
+	}
+
+	slog.Debug("hooks executed", "id", c.State.ID, "event", he)
 	return nil
 }
