@@ -3,8 +3,9 @@ package cli
 import (
 	"os"
 
-	"github.com/michael-duren/boxes/internal/operations"
 	"github.com/spf13/cobra"
+
+	"github.com/michael-duren/boxes/internal/operations"
 )
 
 func createCmd() *cobra.Command {

@@ -3,7 +3,7 @@ package operations
 import "fmt"
 
 type KillOpts struct {
-	ID string
+	ID     string
 	Signal string
 }
 

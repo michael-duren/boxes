@@ -1,0 +1,61 @@
+# golangci-lint configuration.
+#
+# Schema is v2 — this matches golangci-lint 2.x (you have 2.12.2). The v1
+# examples common online will NOT parse here: v2 requires `version: "2"`,
+# splits formatters out of `linters`, and nests per-linter config under
+# `linters.settings`.
+#
+# Run it with `make lint` (or `golangci-lint run ./...`).
+# Auto-apply formatting with `golangci-lint fmt`.
+# Reference: https://golangci-lint.run/usage/configuration/
+version: "2"
+
+run:
+  # Cap the run so a hang in CI fails fast instead of stalling.
+  timeout: 3m
+
+linters:
+  # Start from the curated default set — errcheck, govet, ineffassign,
+  # staticcheck, unused — then layer on a few high-signal extras.
+  default: standard
+  enable:
+    - revive # style/lint rules; the maintained successor to golint
+    - errorlint # correct error wrapping & comparison (%w, errors.Is/As)
+    - misspell # typos in comments and strings
+    - unconvert # redundant type conversions
+    - unparam # unused function parameters and results
+    - bodyclose # HTTP response bodies that are never closed
+    - gocritic # broad catch-all of opinionated diagnostics
+    - nilerr # returning nil after an `err != nil` check
+
+  settings:
+    revive:
+      rules:
+        - name: error-strings # error strings: not capitalized, no trailing punctuation
+        - name: context-as-argument # context.Context is the first parameter
+    misspell:
+      locale: US
+
+  exclusions:
+    # Built-in preset that ignores unchecked errors on the usual suspects
+    # (e.g. deferred File.Close, fmt.Print* to stdout) — these are idiomatic.
+    presets:
+      - std-error-handling
+    rules:
+      # These rules add more noise than signal in tests; relax them there.
+      - path: _test\.go
+        linters:
+          - unparam
+          - gocritic
+
+formatters:
+  # In v2, gofmt/goimports are "formatters", not linters. `golangci-lint fmt`
+  # applies them; `run` reports files that need formatting.
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      # Group this module's imports into their own block, after third-party.
+      local-prefixes:
+        - github.com/michael-duren/boxes
