@@ -41,7 +41,10 @@ func ExecHooks(hooks []specs.Hook, state *specs.State) error {
 
 		cmd := exec.CommandContext(ctx, binary, path)
 
-		cmd.Args = append(h.Args, string(s))
+		args := make([]string, 0, len(h.Args)+1)
+		args = append(args, h.Args...)
+		args = append(args, string(s))
+		cmd.Args = args
 		cmd.Env = h.Env
 		cmd.Stdin = strings.NewReader(string(s))
 

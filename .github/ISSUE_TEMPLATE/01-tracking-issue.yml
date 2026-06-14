@@ -1,0 +1,72 @@
+name: "🗺️ Tracking Issue (Epic)"
+description: "A high-level issue that groups the smaller tasks for a feature or milestone during the building phase."
+title: "[Epic]: "
+labels: ["epic", "roadmap"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for a **chunk of work** (a feature, a subsystem, a milestone goal) — not a single task and not a bug.
+        It tracks the smaller task issues that ship the thing. Keep the checklist updated as tasks are filed and closed.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What is this, and why are we building it? One short paragraph.
+      placeholder: A short description of the problem this addresses and what will ship when it's done.
+    validations:
+      required: true
+
+  - type: textarea
+    id: goals
+    attributes:
+      label: Goals
+      description: What does "done" look like? List the outcomes, not the implementation.
+      placeholder: |
+        - Users can do X
+        - Y is measurably faster
+        - Z is documented
+    validations:
+      required: true
+
+  - type: textarea
+    id: tasks
+    attributes:
+      label: Tasks
+      description: >
+        Break the work into task issues and link them here. Closing a linked
+        issue auto-checks its box. File the tasks with the "Task" template.
+      placeholder: |
+        - [ ] #000  Set up the data model
+        - [ ] #000  Build the API endpoint
+        - [ ] #000  Wire up the UI
+        - [ ] #000  Write docs
+      value: |
+        - [ ] 
+    validations:
+      required: true
+
+  - type: textarea
+    id: non-goals
+    attributes:
+      label: Non-goals (optional)
+      description: Explicitly call out what this work will NOT cover, to keep scope tight.
+      placeholder: |
+        - Not handling migration of legacy data
+        - Not changing the auth flow
+
+  - type: textarea
+    id: open-questions
+    attributes:
+      label: Open questions (optional)
+      description: Anything undecided that could change the plan.
+      placeholder: |
+        - Do we need backwards compatibility with v1?
+
+  - type: input
+    id: milestone
+    attributes:
+      label: Target milestone (optional)
+      description: Which release/milestone is this aimed at?
+      placeholder: "v1.0"

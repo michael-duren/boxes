@@ -3,9 +3,10 @@ package cli
 import (
 	"os"
 
+	"github.com/spf13/cobra"
+
 	"github.com/michael-duren/boxes/internal/filesystem"
 	"github.com/michael-duren/boxes/internal/logger"
-	"github.com/spf13/cobra"
 )
 
 func NewRootCmd() *cobra.Command {

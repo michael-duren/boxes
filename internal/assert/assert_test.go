@@ -29,7 +29,7 @@ func (s *spyT) Fatalf(format string, args ...any) {
 	s.lastMsg = fmt.Sprintf(format, args...)
 }
 
-// failed reports whether the assertion signalled any failure.
+// failed reports whether the assertion signaled any failure.
 func (s *spyT) failed() bool { return s.errored || s.fatal }
 
 // assertCase drives an assertion against a spy and records the expected outcome.

@@ -6,8 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/michael-duren/boxes/internal/container"
 	"github.com/opencontainers/runtime-spec/specs-go"
+
+	"github.com/michael-duren/boxes/internal/container"
 )
 
 type CreateOpts struct {
@@ -47,7 +48,7 @@ func Create(opts *CreateOpts) error {
 	}
 
 	if err := cntr.Init(); err != nil {
-		return fmt.Errorf("initialise container: %w", err)
+		return fmt.Errorf("initialize container: %w", err)
 	}
 
 	if err := cntr.Save(); err != nil {
