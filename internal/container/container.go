@@ -89,7 +89,7 @@ func (c *Container) execHooks(he hooks.HookEvent) error {
 			// by OCI Runtime integration tests and used by other tools like Docker.
 			h = c.Spec.Hooks.Prestart //nolint:staticcheck
 		case hooks.CreateRuntime:
-			h = c.Spec.Hooks.CreateContainer
+			h = c.Spec.Hooks.CreateRuntime
 		case hooks.CreateContainer:
 			h = c.Spec.Hooks.CreateContainer
 		case hooks.StartContainer:
@@ -134,12 +134,6 @@ func (c *Container) Init() (err error) {
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-
-	err = c.execHooks(hooks.CreateContainer)
-
-	if err != nil {
-		return err
-	}
 
 	if err = cmd.Start(); err != nil {
 		return fmt.Errorf("reexec container process: %w", err)
@@ -259,6 +253,12 @@ func (c *Container) Delete(force bool) error {
 			return fmt.Errorf("unable to kill container process: %w", err)
 		}
 	}
+	err = c.execHooks(hooks.Poststop)
+
+	if err != nil {
+		// TODO: add logging
+		return err
+	}
 
 	// remove state file
 	if err := os.RemoveAll(
@@ -271,12 +271,11 @@ func (c *Container) Delete(force bool) error {
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("remove container runtime dir: %w", err)
 	}
-
-	return c.execHooks(hooks.Poststop)
+	return nil
 }
 
 func (c *Container) Reexec() error {
-	// TODO configure cntr
+	// TODO: configure cntr
 
 	// send ready
 	dirs := filesystem.GetDirs()
@@ -295,11 +294,20 @@ func (c *Container) Reexec() error {
 
 	_ = initConn.Close()
 
-	// open a unix socket
+	// NOTE: after sending ready we are saying it is created
+	err = c.execHooks(hooks.CreateContainer)
+
+	if err != nil {
+		return err
+	}
+
+	// open a unix socket this will continue to listen until the user or system
+	// executes start
 	listener, err := net.Listen(
 		"unix",
 		filepath.Join(dirs.Runtime, c.State.ID, containerSockfilename),
 	)
+
 	if err != nil {
 		return fmt.Errorf("listen on container sock: %w", err)
 	}
@@ -388,7 +396,14 @@ func (c *Container) Start() error {
 		return fmt.Errorf("unable to close connection with container process after start msg: %w", err)
 	}
 
-	return c.execHooks(hooks.Poststart)
+	err = c.execHooks(hooks.Poststart)
+
+	// TODO: add logging
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (c *Container) canBeDeleted() bool {
