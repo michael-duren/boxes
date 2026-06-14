@@ -54,62 +54,6 @@ func New(opts *NewContainerOpts) (*Container, error) {
 	return &c, nil
 }
 
-func exists(containerID string) bool {
-	dirs := filesystem.GetDirs()
-	_, err := os.Stat(filepath.Join(dirs.State, containerID))
-	return err == nil
-}
-
-func listenUnix(sockPath string) (net.Listener, error) {
-	if err := os.MkdirAll(filepath.Dir(sockPath), 0755); err != nil {
-		return nil, fmt.Errorf("unable to create socket directory: %w", err)
-	}
-
-	if err := os.Remove(sockPath); err != nil && !os.IsNotExist(err) {
-		return nil, fmt.Errorf("remove stale sock: %w", err)
-	}
-
-	listener, err := net.Listen(
-		"unix",
-		sockPath,
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("listen on init sock: %w", err)
-	}
-	return listener, nil
-}
-
-func (c *Container) execHooks(he hooks.HookEvent) error {
-	if c.Spec.Hooks != nil {
-		var h []specs.Hook
-		switch he {
-		case hooks.Prestart:
-			// SA1019: c.Spec.Hooks.Prestart is deprecated upstream, but still required
-			// by OCI Runtime integration tests and used by other tools like Docker.
-			h = c.Spec.Hooks.Prestart //nolint:staticcheck
-		case hooks.CreateRuntime:
-			h = c.Spec.Hooks.CreateRuntime
-		case hooks.CreateContainer:
-			h = c.Spec.Hooks.CreateContainer
-		case hooks.StartContainer:
-			h = c.Spec.Hooks.StartContainer
-		case hooks.Poststart:
-			h = c.Spec.Hooks.Poststart
-		case hooks.Poststop:
-			h = c.Spec.Hooks.Poststop
-		default:
-			return fmt.Errorf("execHook use of unknown hook event: %s", he)
-		}
-		if err := hooks.ExecHooks(
-			h, c.State,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func (c *Container) Init() (err error) {
 	// 2. configure cntr
 	// TODO: configure cntr
@@ -122,7 +66,7 @@ func (c *Container) Init() (err error) {
 	sockPath := filepath.Join(filesystem.GetDirs().Runtime, c.State.ID, initSockFilename)
 	listener, err := listenUnix(sockPath)
 	if err != nil {
-		return err
+		return c.cleanupOnErr(err)
 	}
 
 	defer errs.WrapDeferedClose(listener, &err)
@@ -237,6 +181,10 @@ func Load(id string) (*Container, error) {
 	return c, nil
 }
 
+func (c *Container) canBeDeleted() bool {
+	return c.State.Status == specs.StateStopped
+}
+
 func (c *Container) Delete(force bool) error {
 	if !force && !c.canBeDeleted() {
 		return fmt.Errorf("container cannot be deleted in current state (%s) try using '--force' if this is intentional", c.State.Status)
@@ -250,9 +198,11 @@ func (c *Container) Delete(force bool) error {
 	if process != nil {
 		err := process.Signal(unix.SIGKILL)
 		if err != nil {
-			return fmt.Errorf("unable to kill container process: %w", err)
+			// TODO: log
+			// return fmt.Errorf("unable to kill container process: %w", err)
 		}
 	}
+
 	err = c.execHooks(hooks.Poststop)
 
 	if err != nil {
@@ -260,18 +210,7 @@ func (c *Container) Delete(force bool) error {
 		return err
 	}
 
-	// remove state file
-	if err := os.RemoveAll(
-		filepath.Join(filesystem.GetDirs().State, c.State.ID),
-	); err != nil {
-		return fmt.Errorf("delete container directory: %w", err)
-	}
-
-	dir := filepath.Join(filesystem.GetDirs().Runtime, c.State.ID)
-	if err := os.RemoveAll(dir); err != nil {
-		return fmt.Errorf("remove container runtime dir: %w", err)
-	}
-	return nil
+	return c.removeContainerFiles()
 }
 
 func (c *Container) Reexec() error {
@@ -363,6 +302,10 @@ func (c *Container) Reexec() error {
 	panic("the call to execve was not successful and an error was not returned.")
 }
 
+func (c *Container) canBeStarted() bool {
+	return c.State.Status == specs.StateCreated
+}
+
 func (c *Container) Start() error {
 	if c.Spec.Process == nil {
 		return nil
@@ -406,10 +349,60 @@ func (c *Container) Start() error {
 	return nil
 }
 
-func (c *Container) canBeDeleted() bool {
-	return c.State.Status == specs.StateStopped
+// cleanupOnErr - if an error occurs during the creation of a container
+// this method will cleanup and wrap the original error if cleanup fails
+func (c *Container) cleanupOnErr(err error) error {
+	rmErr := c.removeContainerFiles()
+	if rmErr != nil {
+		return fmt.Errorf("cleanup on err unable to cleanup container state and runtime files: %w", err)
+	}
+	return err
 }
 
-func (c *Container) canBeStarted() bool {
-	return c.State.Status == specs.StateCreated
+// removeContainerFiles - removes state and runtime files of a container
+func (c *Container) removeContainerFiles() error {
+	if err := os.RemoveAll(
+		filepath.Join(filesystem.GetDirs().State, c.State.ID),
+	); err != nil {
+		return fmt.Errorf("delete container directory: %w", err)
+	}
+
+	dir := filepath.Join(filesystem.GetDirs().Runtime, c.State.ID)
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("remove container runtime dir: %w", err)
+	}
+	return nil
+}
+
+// execHooks - maps executes the correct hooks depending on the passed event
+//
+// execHooks calls the [hooks.ExecHooks] method
+func (c *Container) execHooks(he hooks.HookEvent) error {
+	if c.Spec.Hooks != nil {
+		var h []specs.Hook
+		switch he {
+		case hooks.Prestart:
+			// SA1019: c.Spec.Hooks.Prestart is deprecated upstream, but still required
+			// by OCI Runtime integration tests and used by other tools like Docker.
+			h = c.Spec.Hooks.Prestart //nolint:staticcheck
+		case hooks.CreateRuntime:
+			h = c.Spec.Hooks.CreateRuntime
+		case hooks.CreateContainer:
+			h = c.Spec.Hooks.CreateContainer
+		case hooks.StartContainer:
+			h = c.Spec.Hooks.StartContainer
+		case hooks.Poststart:
+			h = c.Spec.Hooks.Poststart
+		case hooks.Poststop:
+			h = c.Spec.Hooks.Poststop
+		default:
+			return fmt.Errorf("execHook use of unknown hook event: %s", he)
+		}
+		if err := hooks.ExecHooks(
+			h, c.State,
+		); err != nil {
+			return err
+		}
+	}
+	return nil
 }
