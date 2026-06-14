@@ -24,7 +24,7 @@ vet:
 	go vet ./...
 
 fmt:
-	go fmt ./...
+	golangci-lint fmt ./...
 
 lint:
 	golangci-lint run ./...
@@ -47,6 +47,9 @@ IMG := alpinefs
 
 create:
 	go run $(PKG) create --bundle $(IMG) $(CONTAINER) 
+
+start:
+	go run $(PKG) start $(CONTAINER)
 
 state:
 	go run $(PKG) state $(CONTAINER) | jq
