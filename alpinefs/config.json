@@ -5,19 +5,19 @@
     "prestart": [
       {
         "path": "/bin/sh",
-        "args": ["sh", "-c", "touch /tmp/hook-prestart"]
+        "args": ["sh", "-c", "touch ~/pre.txt"]
       }
     ],
     "createRuntime": [
       {
         "path": "/bin/sh",
-        "args": ["sh", "-c", "touch /tmp/hook-createRuntime"]
+        "args": ["sh", "-c", "touch ~/hook-createRuntime"]
       }
     ],
     "createContainer": [
       {
         "path": "/bin/sh",
-        "args": ["sh", "-c", "touch /tmp/hook-createContainer"]
+        "args": ["sh", "-c", "touch ~/hook-createContainer"]
       }
     ],
     "startContainer": [
@@ -26,24 +26,24 @@
         "args": [
           "sh",
           "-c",
-          "rm /tmp/hook-prestart /tmp/hook-createRuntime /tmp/hook-createContainer"
+          "rm ~/hook-prestart ~/hook-createRuntime ~/hook-createContainer"
         ]
       },
       {
         "path": "/bin/sh",
-        "args": ["sh", "-c", "touch /tmp/hook-startContainer"]
+        "args": ["sh", "-c", "touch ~/hook-startContainer"]
       }
     ],
     "poststart": [
       {
         "path": "/bin/sh",
-        "args": ["sh", "-c", "touch /tmp/hook-poststart"]
+        "args": ["sh", "-c", "touch ~/hook-poststart"]
       }
     ],
     "poststop": [
       {
         "path": "/bin/sh",
-        "args": ["sh", "-c", "rm /tmp/hook-startContainer /tmp/hook-poststart"]
+        "args": ["sh", "-c", "rm ~/hook-startContainer ~/hook-poststart"]
       }
     ]
   },

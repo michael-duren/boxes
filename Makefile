@@ -48,6 +48,9 @@ IMG := alpinefs
 create:
 	go run $(PKG) create --bundle $(IMG) $(CONTAINER) 
 
+start:
+	go run $(PKG) start $(CONTAINER)
+
 state:
 	go run $(PKG) state $(CONTAINER) | jq
 
