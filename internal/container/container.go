@@ -10,8 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/michael-duren/boxes/internal/errs"
-	"github.com/michael-duren/boxes/internal/filesystem"
 	"github.com/michael-duren/boxes/internal/hooks"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
