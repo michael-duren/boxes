@@ -1,0 +1,67 @@
+name: "🔨 Task"
+description: "A single, concrete unit of build work — a piece of a feature, not a bug report."
+title: "[Task]: "
+labels: ["task"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for **one discrete piece of work** to be built. If it's a defect in existing
+        behavior, use the Bug Report template instead. If it's a whole feature made of many
+        tasks, use the Tracking Issue template.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What needs to be done
+      description: Describe the work concretely. Someone picking this up cold should understand the ask.
+      placeholder: Add a POST /sessions endpoint that issues a token given valid credentials.
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How do we know it's finished? Checkable, specific conditions.
+      placeholder: |
+        - [ ] Endpoint returns 200 + token on valid creds
+        - [ ] Returns 401 on invalid creds
+        - [ ] Has unit tests
+        - [ ] Documented in the API reference
+      value: |
+        - [ ] 
+    validations:
+      required: true
+
+  - type: input
+    id: parent
+    attributes:
+      label: Parent / tracking issue (optional)
+      description: Link the epic this task belongs to, if any.
+      placeholder: "#000"
+
+  - type: textarea
+    id: blocked-by
+    attributes:
+      label: Blocked by (optional)
+      description: List any issues that must land before this one can start.
+      placeholder: |
+        - #000 (data model must exist first)
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Implementation notes (optional)
+      description: Hints, links, gotchas, or design decisions for whoever takes this on.
+
+  - type: dropdown
+    id: size
+    attributes:
+      label: Rough size (optional)
+      description: A gut-feel estimate, not a commitment.
+      options:
+        - "S — a few hours"
+        - "M — a day or two"
+        - "L — most of a week"
+        - "XL — should probably be split"

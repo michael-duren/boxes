@@ -15,6 +15,9 @@ import (
 	"github.com/michael-duren/boxes/internal/hooks"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+
+	"github.com/michael-duren/boxes/internal/errs"
+	"github.com/michael-duren/boxes/internal/filesystem"
 )
 
 const (
@@ -132,7 +135,7 @@ func (c *Container) Save() error {
 
 	state, err := json.Marshal(c.State)
 	if err != nil {
-		return fmt.Errorf("serialise container state: %w", err)
+		return fmt.Errorf("serialize container state: %w", err)
 	}
 
 	if err := os.WriteFile(

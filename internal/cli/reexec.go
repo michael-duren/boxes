@@ -1,8 +1,9 @@
 package cli
 
 import (
-	"github.com/michael-duren/boxes/internal/operations"
 	"github.com/spf13/cobra"
+
+	"github.com/michael-duren/boxes/internal/operations"
 )
 
 func reexecCmd() *cobra.Command {
