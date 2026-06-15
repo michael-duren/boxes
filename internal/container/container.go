@@ -216,6 +216,25 @@ func Load(id string) (*Container, error) {
 	return c, nil
 }
 
+func (c *Container) canBeKilled() bool {
+	return c.State.Status == specs.StateRunning ||
+		c.State.Status == specs.StateCreated
+}
+
+func (c *Container) Kill(sig unix.Signal) error {
+	if !c.canBeKilled() {
+		return fmt.Errorf("container cannot be killed in current state (%s)", c.State.Status)
+	}
+
+	if err := syscall.Kill(c.State.Pid, sig); err != nil {
+		return fmt.Errorf("send signal '%d' to process '%d': %w", sig, c.State.Pid, err)
+	}
+
+	c.State.Status = specs.StateStopped
+
+	return c.execHooks(hooks.Poststop)
+}
+
 func (c *Container) canBeDeleted() bool {
 	return c.State.Status == specs.StateStopped
 }
@@ -457,7 +476,6 @@ func (c *Container) removeContainerFiles() error {
 }
 
 // execHooks - maps executes the correct hooks depending on the passed event
-//
 // execHooks calls the [hooks.ExecHooks] method
 func (c *Container) execHooks(he hooks.HookEvent) error {
 	if c.Spec.Hooks == nil {
