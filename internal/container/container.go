@@ -221,18 +221,45 @@ func (c *Container) canBeKilled() bool {
 		c.State.Status == specs.StateCreated
 }
 
+// TODO:  Kill unconditionally marks the container Stopped — this is wrong for most signals.
+//
+//	if err := syscall.Kill(c.State.Pid, sig); err != nil { ... }
+//	c.State.Status = specs.StateStopped
+//	return c.execHooks(hooks.Poststop)
+//	kill just sends a signal. SIGTERM may be trapped, SIGHUP/SIGUSR1/SIGSTOP don't terminate at all, yet the container is recorded as Stopped and Poststop hooks
+//	fire. Because canBeDeleted() requires StateStopped (container.go:239), this lets a user kill a still-running container with a benign signal and then delete it —
+//	deleting state out from under a live process. The status should reflect reality (e.g. only transition on a confirmed-dead process, or leave the status to be
+//	reconciled by state/wait), and Poststop should not run on every signal.
 func (c *Container) Kill(sig unix.Signal) error {
+	slog.Info("killing container", "id", c.State.ID, "signal", int(sig), "status", c.State.Status, "pid", c.State.Pid)
+
 	if !c.canBeKilled() {
+		slog.Error("container cannot be killed in current state", "id", c.State.ID, "status", c.State.Status)
 		return fmt.Errorf("container cannot be killed in current state (%s)", c.State.Status)
 	}
 
-	if err := syscall.Kill(c.State.Pid, sig); err != nil {
+	if c.State.Pid <= 0 {
+		slog.Error("invalid process ID for container", "id", c.State.ID, "pid", c.State.Pid)
+		return fmt.Errorf("process ID: %d for container ID %s is <= 0", c.State.Pid, c.State.ID)
+	}
+
+	slog.Debug("sending signal to container process", "id", c.State.ID, "signal", int(sig), "pid", c.State.Pid)
+	if err := unix.Kill(c.State.Pid, sig); err != nil {
+		slog.Error("failed to send signal to container process", "id", c.State.ID, "signal", int(sig), "pid", c.State.Pid, "err", err)
 		return fmt.Errorf("send signal '%d' to process '%d': %w", sig, c.State.Pid, err)
 	}
 
 	c.State.Status = specs.StateStopped
+	slog.Debug("container status updated", "id", c.State.ID, "status", c.State.Status)
 
-	return c.execHooks(hooks.Poststop)
+	slog.Debug("executing poststop hooks", "id", c.State.ID)
+	if err := c.execHooks(hooks.Poststop); err != nil {
+		slog.Error("failed to execute poststop hooks", "id", c.State.ID, "err", err)
+		return err
+	}
+
+	slog.Info("container killed", "id", c.State.ID, "signal", int(sig))
+	return nil
 }
 
 func (c *Container) canBeDeleted() bool {

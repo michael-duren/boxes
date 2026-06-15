@@ -24,6 +24,9 @@ func Kill(opts *KillOpts) error {
 		return fmt.Errorf("load container: %w", err)
 	}
 
+	// TODO: look up ids from golang.org/x/sys/unix for literal cmds
+	// that aren't ints: kill | sigterm| term etc
+	// or use a number name map
 	sig, err := strconv.Atoi(opts.Signal)
 	if err != nil {
 		slog.Error("failed to convert signal to int", "id", opts.ID, "signal", opts.Signal, "err", err)
