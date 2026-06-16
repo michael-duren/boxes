@@ -41,27 +41,30 @@ install: build
 uninstall:
 	rm -f $(PREFIX)/bin/$(BINARY)
 
+console:
+	tail -f "$$XDG_STATE_HOME/boxes/logs/boxes.log"
+
 # CONTAINER SPECIFIC SUB CMDS W EX ARGS
 CONTAINER := mycontainer
 IMG := alpinefs
 
 create:
-	go run $(PKG) create --bundle $(IMG) $(CONTAINER) 
+	go run $(PKG) --debug create --bundle $(IMG) $(CONTAINER) 
 
 start:
-	go run $(PKG) start $(CONTAINER)
+	go run $(PKG) --debug start $(CONTAINER)
 
 state:
-	go run $(PKG) state $(CONTAINER) | jq
+	go run $(PKG) --debug state $(CONTAINER) | jq
 
 state-broken:
-	go run $(PKG) state 26ede6c5-5103-405b-ac03-348ffc42e35d 
+	go run $(PKG) --debug state 26ede6c5-5103-405b-ac03-348ffc42e35d 
 
 kill:
-	go run $(PKG) kill $(CONTAINER) 9
+	go run $(PKG) --debug kill $(CONTAINER) 9
 
 delete:
-	go run $(PKG) delete $(CONTAINER)
+	go run $(PKG) --debug delete $(CONTAINER)
 
 force-delete:
-	go run $(PKG) delete --force $(CONTAINER)
+	go run $(PKG) --debug delete --force $(CONTAINER)
