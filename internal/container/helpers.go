@@ -37,7 +37,7 @@ func listenUnix(sockPath string) (net.Listener, error) {
 	return listener, nil
 }
 
-func exists(containerID string) bool {
+func containerExists(containerID string) bool {
 	dirs := filesystem.GetDirs()
 	_, err := os.Stat(filepath.Join(dirs.State, containerID))
 	found := err == nil

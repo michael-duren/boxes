@@ -1,59 +1,13 @@
 {
   "$schema": "https://raw.githubusercontent.com/opencontainers/runtime-spec/main/schema/config-schema.json",
   "ociVersion": "1.3.0",
-  "hooks": {
-    "prestart": [
-      {
-        "path": "/bin/sh",
-        "args": ["sh", "-c", "touch ~/hook-prestart"]
-      }
-    ],
-    "createRuntime": [
-      {
-        "path": "/bin/sh",
-        "args": ["sh", "-c", "touch ~/hook-createRuntime"]
-      }
-    ],
-    "createContainer": [
-      {
-        "path": "/bin/sh",
-        "args": ["sh", "-c", "touch ~/hook-createContainer"]
-      }
-    ],
-    "startContainer": [
-      {
-        "path": "/bin/sh",
-        "args": [
-          "sh",
-          "-c",
-          "rm ~/hook-prestart ~/hook-createRuntime ~/hook-createContainer"
-        ]
-      },
-      {
-        "path": "/bin/sh",
-        "args": ["sh", "-c", "touch ~/hook-startContainer"]
-      }
-    ],
-    "poststart": [
-      {
-        "path": "/bin/sh",
-        "args": ["sh", "-c", "touch ~/hook-poststart"]
-      }
-    ],
-    "poststop": [
-      {
-        "path": "/bin/sh",
-        "args": ["sh", "-c", "rm ~/hook-startContainer ~/hook-poststart"]
-      }
-    ]
-  },
   "process": {
     "terminal": true,
     "user": {
       "uid": 0,
       "gid": 0
     },
-    "args": ["touch", "$HOME/container_test.txt"],
+    "args": ["sleep", "60"],
     "env": [
       "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
       "TERM=xterm"

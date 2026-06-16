@@ -39,7 +39,7 @@ type NewContainerOpts struct {
 func New(opts *NewContainerOpts) (*Container, error) {
 	slog.Debug("creating new container", "id", opts.ID, "bundle", opts.Bundle)
 
-	if exists(opts.ID) {
+	if containerExists(opts.ID) {
 		slog.Warn("container already exists", "id", opts.ID)
 		return nil, fmt.Errorf("container '%s' exists", opts.ID)
 	}
@@ -214,6 +214,59 @@ func Load(id string) (*Container, error) {
 
 	slog.Debug("container loaded", "id", id, "status", state.Status, "pid", state.Pid)
 	return c, nil
+}
+
+func (c *Container) canBeKilled() bool {
+	return c.State.Status == specs.StateRunning ||
+		c.State.Status == specs.StateCreated
+}
+
+// func (c *Container) processIsRunning() bool {
+// 	if c.State.Pid <= 0 {
+// 		return false
+// 	}
+// 	// check status
+// 	err := unix.Kill(c.State.Pid, 0)
+// 	return err == nil || errors.Is(err, unix.EPERM)
+// }
+
+func (c *Container) Kill(sig unix.Signal) error {
+	slog.Info("killing container", "id", c.State.ID, "signal", int(sig), "status", c.State.Status, "pid", c.State.Pid)
+
+	if !c.canBeKilled() {
+		slog.Error("container cannot be killed in current state", "id", c.State.ID, "status", c.State.Status)
+		return fmt.Errorf("container cannot be killed in current state (%s)", c.State.Status)
+	}
+
+	if c.State.Pid <= 0 {
+		slog.Error("invalid process ID for container", "id", c.State.ID, "pid", c.State.Pid)
+		return fmt.Errorf("process ID: %d for container ID %s is <= 0", c.State.Pid, c.State.ID)
+	}
+
+	slog.Debug("sending signal to container process", "id", c.State.ID, "signal", int(sig), "pid", c.State.Pid)
+	if err := unix.Kill(c.State.Pid, sig); err != nil {
+		slog.Error("failed to send signal to container process", "id", c.State.ID, "signal", int(sig), "pid", c.State.Pid, "err", err)
+		return fmt.Errorf("send signal '%d' to process '%d': %w", sig, c.State.Pid, err)
+	}
+
+	// TODO: Create issue and accurately resolve whether or not a
+	// process was killed, commenting out for now
+	// if c.processIsRunning() {
+	// 	slog.Debug("container was sent signal but wasn't stopped", "id", c.State.ID, "signal", int(sig))
+	// 	return nil
+	// }
+
+	c.State.Status = specs.StateStopped
+	slog.Debug("container status updated", "id", c.State.ID, "status", c.State.Status)
+
+	slog.Debug("executing poststop hooks", "id", c.State.ID)
+	if err := c.execHooks(hooks.Poststop); err != nil {
+		slog.Error("failed to execute poststop hooks", "id", c.State.ID, "err", err)
+		return err
+	}
+
+	slog.Info("container killed", "id", c.State.ID, "signal", int(sig))
+	return nil
 }
 
 func (c *Container) canBeDeleted() bool {
@@ -457,7 +510,6 @@ func (c *Container) removeContainerFiles() error {
 }
 
 // execHooks - maps executes the correct hooks depending on the passed event
-//
 // execHooks calls the [hooks.ExecHooks] method
 func (c *Container) execHooks(he hooks.HookEvent) error {
 	if c.Spec.Hooks == nil {
