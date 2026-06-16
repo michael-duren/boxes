@@ -250,10 +250,12 @@ func (c *Container) Kill(sig unix.Signal) error {
 		return fmt.Errorf("send signal '%d' to process '%d': %w", sig, c.State.Pid, err)
 	}
 
-	if c.processIsRunning() {
-		slog.Debug("container was sent signal but wasn't stopped", "id", c.State.ID, "signal", int(sig))
-		return nil
-	}
+	// TODO: Create issue and accurately resolve whether or not a 
+	// process was killed, commenting out for now
+	// if c.processIsRunning() {
+	// 	slog.Debug("container was sent signal but wasn't stopped", "id", c.State.ID, "signal", int(sig))
+	// 	return nil
+	// }
 
 	c.State.Status = specs.StateStopped
 	slog.Debug("container status updated", "id", c.State.ID, "status", c.State.Status)
