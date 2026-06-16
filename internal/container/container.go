@@ -2,7 +2,6 @@ package container
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -222,14 +221,14 @@ func (c *Container) canBeKilled() bool {
 		c.State.Status == specs.StateCreated
 }
 
-func (c *Container) processIsRunning() bool {
-	if c.State.Pid <= 0 {
-		return false
-	}
-	// check status
-	err := unix.Kill(c.State.Pid, 0)
-	return err == nil || errors.Is(err, unix.EPERM)
-}
+// func (c *Container) processIsRunning() bool {
+// 	if c.State.Pid <= 0 {
+// 		return false
+// 	}
+// 	// check status
+// 	err := unix.Kill(c.State.Pid, 0)
+// 	return err == nil || errors.Is(err, unix.EPERM)
+// }
 
 func (c *Container) Kill(sig unix.Signal) error {
 	slog.Info("killing container", "id", c.State.ID, "signal", int(sig), "status", c.State.Status, "pid", c.State.Pid)
@@ -250,7 +249,7 @@ func (c *Container) Kill(sig unix.Signal) error {
 		return fmt.Errorf("send signal '%d' to process '%d': %w", sig, c.State.Pid, err)
 	}
 
-	// TODO: Create issue and accurately resolve whether or not a 
+	// TODO: Create issue and accurately resolve whether or not a
 	// process was killed, commenting out for now
 	// if c.processIsRunning() {
 	// 	slog.Debug("container was sent signal but wasn't stopped", "id", c.State.ID, "signal", int(sig))
