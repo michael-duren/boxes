@@ -2,6 +2,7 @@ package container
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -39,7 +40,7 @@ type NewContainerOpts struct {
 func New(opts *NewContainerOpts) (*Container, error) {
 	slog.Debug("creating new container", "id", opts.ID, "bundle", opts.Bundle)
 
-	if exists(opts.ID) {
+	if containerExists(opts.ID) {
 		slog.Warn("container already exists", "id", opts.ID)
 		return nil, fmt.Errorf("container '%s' exists", opts.ID)
 	}
@@ -221,15 +222,15 @@ func (c *Container) canBeKilled() bool {
 		c.State.Status == specs.StateCreated
 }
 
-// TODO:  Kill unconditionally marks the container Stopped — this is wrong for most signals.
-//
-//	if err := syscall.Kill(c.State.Pid, sig); err != nil { ... }
-//	c.State.Status = specs.StateStopped
-//	return c.execHooks(hooks.Poststop)
-//	kill just sends a signal. SIGTERM may be trapped, SIGHUP/SIGUSR1/SIGSTOP don't terminate at all, yet the container is recorded as Stopped and Poststop hooks
-//	fire. Because canBeDeleted() requires StateStopped (container.go:239), this lets a user kill a still-running container with a benign signal and then delete it —
-//	deleting state out from under a live process. The status should reflect reality (e.g. only transition on a confirmed-dead process, or leave the status to be
-//	reconciled by state/wait), and Poststop should not run on every signal.
+func (c *Container) processIsRunning() bool {
+	if c.State.Pid <= 0 {
+		return false
+	}
+	// check status
+	err := unix.Kill(c.State.Pid, 0)
+	return err == nil || errors.Is(err, unix.EPERM)
+}
+
 func (c *Container) Kill(sig unix.Signal) error {
 	slog.Info("killing container", "id", c.State.ID, "signal", int(sig), "status", c.State.Status, "pid", c.State.Pid)
 
@@ -247,6 +248,11 @@ func (c *Container) Kill(sig unix.Signal) error {
 	if err := unix.Kill(c.State.Pid, sig); err != nil {
 		slog.Error("failed to send signal to container process", "id", c.State.ID, "signal", int(sig), "pid", c.State.Pid, "err", err)
 		return fmt.Errorf("send signal '%d' to process '%d': %w", sig, c.State.Pid, err)
+	}
+
+	if c.processIsRunning() {
+		slog.Debug("container was sent signal but wasn't stopped", "id", c.State.ID, "signal", int(sig))
+		return nil
 	}
 
 	c.State.Status = specs.StateStopped
