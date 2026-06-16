@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 
 	"golang.org/x/sys/unix"
 
@@ -24,13 +25,10 @@ func Kill(opts *KillOpts) error {
 		return fmt.Errorf("load container: %w", err)
 	}
 
-	// TODO: look up ids from golang.org/x/sys/unix for literal cmds
-	// that aren't ints: kill | sigterm| term etc
-	// or use a number name map
-	sig, err := strconv.Atoi(opts.Signal)
+	sig, err := parseSignal(opts.Signal)
 	if err != nil {
-		slog.Error("failed to convert signal to int", "id", opts.ID, "signal", opts.Signal, "err", err)
-		return fmt.Errorf("convert signal to int: %w", err)
+		slog.Error("unable to parse signal from kill command", "id", opts.ID, "signal", opts.Signal)
+		return fmt.Errorf("parseSignal: %w", err)
 	}
 
 	if err := cntr.Kill(unix.Signal(sig)); err != nil {
@@ -45,4 +43,23 @@ func Kill(opts *KillOpts) error {
 
 	slog.Info("kill operation complete", "id", opts.ID, "signal", sig)
 	return nil
+}
+
+func parseSignal(rawSignal string) (unix.Signal, error) {
+	s, err := strconv.Atoi(rawSignal)
+	if err == nil {
+		return unix.Signal(s), nil
+	}
+
+	slog.Debug("user passed code rather than int signal", "signal", rawSignal)
+	sig := strings.ToUpper(rawSignal)
+	if !strings.HasPrefix(sig, "SIG") {
+		sig = "SIG" + sig
+	}
+	signal := unix.SignalNum(sig)
+	if signal == 0 {
+		slog.Warn("unknown signal passed to kill command", "signal", signal)
+		return -1, fmt.Errorf("unknown signal %q", rawSignal)
+	}
+	return signal, nil
 }
