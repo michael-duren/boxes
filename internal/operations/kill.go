@@ -31,7 +31,7 @@ func Kill(opts *KillOpts) error {
 		return fmt.Errorf("parseSignal: %w", err)
 	}
 
-	if err := cntr.Kill(unix.Signal(sig)); err != nil {
+	if err := cntr.Kill(sig); err != nil {
 		slog.Error("failed to kill container", "id", opts.ID, "signal", sig, "err", err)
 		return fmt.Errorf("kill container: %w", err)
 	}

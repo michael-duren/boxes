@@ -44,4 +44,3 @@ func containerExists(containerID string) bool {
 	slog.Debug("checking if container exists", "id", containerID, "exists", found)
 	return found
 }
-
