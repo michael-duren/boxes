@@ -24,21 +24,33 @@
 #      referenced issue may be uploaded later in the same run, a second pass edits
 #      any issue that still contains unresolved tokens once all numbers are known,
 #      then bakes the resolved `#N` back into the source file.
+#   4. Deletes each source file once its issue is on GitHub, so posted issues
+#      don't linger as markdown in source control (set KEEP_UPLOADED=1 to keep
+#      them). Files that fail to upload are kept for retry.
 #
-# This makes the script reusable for ANY folder of issue files and idempotent:
-# the source files ARE the source of truth for what's been uploaded.
+# This makes the script reusable for ANY folder of issue files. Note: because
+# posted files are deleted by default, `{{issue:...}}` links only resolve to
+# issues posted in the SAME run — a token pointing at a file deleted by a prior
+# run can't be resolved (use the literal `#N`, or run KEEP_UPLOADED=1).
 #
 # Usage:
 #   ./post-issues.sh                      # post unuploaded issues in <repo>/issues
 #   ISSUES_DIR=path/to/issues ./post-issues.sh
 #   REPO=owner/name ./post-issues.sh      # target a specific repo (else gh infers)
 #   DRY_RUN=1 ./post-issues.sh            # show what would happen, change nothing
+#   KEEP_UPLOADED=1 ./post-issues.sh      # keep source files after posting
 #
 # Requires: gh (authenticated), awk, sed, grep.
 
 set -euo pipefail
 
 DRY_RUN="${DRY_RUN:-0}"
+
+# After an issue is posted, delete its source markdown so posted issues don't
+# linger in source control. Files that FAIL to upload (no `uploaded:` URL) are
+# always kept so they can be fixed and retried. Set KEEP_UPLOADED=1 to retain
+# everything (the old behavior).
+KEEP_UPLOADED="${KEEP_UPLOADED:-0}"
 
 # Resolve the issues directory: explicit override, else <repo-root>/issues,
 # else <script-dir>/../issues as a fallback when not in a git repo.
@@ -302,5 +314,21 @@ if [[ "$DRY_RUN" != "1" ]]; then
     done
 fi
 
+# 4. Clean up: remove source files whose issue now lives on GitHub, so posted
+#    issues don't accumulate as markdown in the repo. Runs last, after the
+#    cross-link pass, so {{issue:...}} resolution within this run still works.
+#    Files without an `uploaded:` URL (upload failed / no title) are kept.
+removed=0
+if [[ "$DRY_RUN" != "1" && "$KEEP_UPLOADED" != "1" ]]; then
+    for f in "${FILES[@]}"; do
+        [[ -e "$f" ]] || continue
+        if [[ -n "$(fm_value "$f" uploaded)" ]]; then
+            echo "removing posted source file: $(basename "$f")"
+            rm -f "$f"
+            ((removed++)) || true
+        fi
+    done
+fi
+
 echo
-echo "Done. created=$created skipped=$skipped (dry_run=$DRY_RUN)"
+echo "Done. created=$created skipped=$skipped removed=$removed (dry_run=$DRY_RUN, keep_uploaded=$KEEP_UPLOADED)"

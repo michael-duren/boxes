@@ -28,26 +28,20 @@ const (
 type Container struct {
 	State *specs.State
 	Spec  *specs.Spec
+	Dirs  filesystem.Dirs
 }
 
 type NewContainerOpts struct {
 	ID     string
 	Bundle string
 	Spec   *specs.Spec
-}
-
-func containerExists(containerID string) bool {
-	dirs := filesystem.GetDirs()
-	_, err := os.Stat(filepath.Join(dirs.State, containerID))
-	found := err == nil
-	slog.Debug("checking if container exists", "id", containerID, "exists", found)
-	return found
+	Dirs   filesystem.Dirs
 }
 
 func New(opts *NewContainerOpts) (*Container, error) {
 	slog.Debug("creating new container", "id", opts.ID, "bundle", opts.Bundle)
 
-	if containerExists(opts.ID) {
+	if _, err := os.Stat(filepath.Join(opts.Dirs.State, opts.ID)); err == nil {
 		slog.Warn("container already exists", "id", opts.ID)
 		return nil, fmt.Errorf("container '%s' exists", opts.ID)
 	}
@@ -63,6 +57,7 @@ func New(opts *NewContainerOpts) (*Container, error) {
 	c := Container{
 		State: &state,
 		Spec:  opts.Spec,
+		Dirs:  opts.Dirs,
 	}
 
 	slog.Debug("container initialized", "id", opts.ID, "status", state.Status)
@@ -75,6 +70,7 @@ func (c *Container) Init() (err error) {
 
 	// 2. configure cntr
 	// TODO: configure cntr
+
 	err = c.execHooks(hooks.CreateRuntime)
 
 	if err != nil {
@@ -153,7 +149,7 @@ func (c *Container) Save() error {
 	slog.Debug("saving container state", "id", c.State.ID, "status", c.State.Status)
 
 	if err := os.MkdirAll(
-		filepath.Join(filesystem.GetDirs().State, c.State.ID),
+		filepath.Join(c.Dirs.State, c.State.ID),
 		0755,
 	); err != nil {
 		slog.Error("failed to create container directory", "id", c.State.ID, "err", err)
@@ -167,7 +163,7 @@ func (c *Container) Save() error {
 	}
 
 	if err := os.WriteFile(
-		filepath.Join(filesystem.GetDirs().State, c.State.ID, "state.json"),
+		filepath.Join(c.Dirs.State, c.State.ID, "state.json"),
 		state,
 		0755,
 	); err != nil {
@@ -179,11 +175,11 @@ func (c *Container) Save() error {
 	return nil
 }
 
-func Load(id string) (*Container, error) {
+func Load(id string, dirs filesystem.Dirs) (*Container, error) {
 	slog.Debug("loading container", "id", id)
 
 	s, err := os.ReadFile(
-		filepath.Join(filesystem.GetDirs().State, id, "state.json"),
+		filepath.Join(dirs.State, id, "state.json"),
 	)
 
 	if err != nil {
@@ -318,7 +314,7 @@ func (c *Container) Reexec() error {
 	// TODO: configure cntr
 
 	// send ready
-	dirs := filesystem.GetDirs()
+	dirs := c.Dirs
 	slog.Debug("dialing init sock", "id", c.State.ID)
 	initConn, err := net.Dial(
 		"unix",
@@ -442,7 +438,7 @@ func (c *Container) Start() error {
 	slog.Debug("dialing container sock to send start", "id", c.State.ID)
 	conn, err := net.Dial(
 		"unix",
-		filepath.Join(filesystem.GetDirs().Runtime, c.State.ID, containerSockfilename),
+		filepath.Join(c.Dirs.Runtime, c.State.ID, containerSockfilename),
 	)
 	if err != nil {
 		slog.Error("failed to dial container sock", "id", c.State.ID, "err", err)
@@ -498,13 +494,13 @@ func (c *Container) removeContainerFiles() error {
 	slog.Debug("removing container state and runtime files", "id", c.State.ID)
 
 	if err := os.RemoveAll(
-		filepath.Join(filesystem.GetDirs().State, c.State.ID),
+		filepath.Join(c.Dirs.State, c.State.ID),
 	); err != nil {
 		slog.Error("failed to delete container state directory", "id", c.State.ID, "err", err)
 		return fmt.Errorf("delete container directory: %w", err)
 	}
 
-	dir := filepath.Join(filesystem.GetDirs().Runtime, c.State.ID)
+	dir := filepath.Join(c.Dirs.Runtime, c.State.ID)
 	if err := os.RemoveAll(dir); err != nil {
 		slog.Error("failed to remove container runtime directory", "id", c.State.ID, "dir", dir, "err", err)
 		return fmt.Errorf("remove container runtime dir: %w", err)
@@ -559,7 +555,7 @@ func (c *Container) execHooks(he hooks.HookEvent) error {
 }
 
 func (c *Container) listenUnix() (net.Listener, error) {
-	sockPath := filepath.Join(filesystem.GetDirs().Runtime, c.State.ID, initSockFilename)
+	sockPath := filepath.Join(c.Dirs.Runtime, c.State.ID, initSockFilename)
 	slog.Debug("listening on init sock", "id", c.State.ID, "path", sockPath)
 	slog.Debug("creating unix listener", "path", sockPath)
 
