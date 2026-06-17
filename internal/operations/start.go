@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/michael-duren/boxes/internal/container"
+	"github.com/michael-duren/boxes/internal/filesystem"
 )
 
 type StartOpts struct {
@@ -14,7 +15,7 @@ type StartOpts struct {
 func Start(opts *StartOpts) error {
 	slog.Info("start operation", "id", opts.ID)
 
-	cntr, err := container.Load(opts.ID)
+	cntr, err := container.Load(opts.ID, filesystem.GetDirs())
 
 	if err != nil {
 		slog.Error("failed to load container", "id", opts.ID, "err", err)

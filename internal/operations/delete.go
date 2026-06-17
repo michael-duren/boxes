@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/michael-duren/boxes/internal/container"
+	"github.com/michael-duren/boxes/internal/filesystem"
 )
 
 type DeleteOpts struct {
@@ -15,7 +16,7 @@ type DeleteOpts struct {
 func Delete(opts *DeleteOpts) error {
 	slog.Info("delete operation", "id", opts.ID, "force", opts.Force)
 
-	cntr, err := container.Load(opts.ID)
+	cntr, err := container.Load(opts.ID, filesystem.GetDirs())
 	if err != nil {
 		slog.Error("failed to load container", "id", opts.ID, "err", err)
 		return fmt.Errorf("load container: %w", err)

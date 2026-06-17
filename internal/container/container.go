@@ -22,7 +22,9 @@ import (
 
 const (
 	initSockFilename      = "init.sock"
-	containerSockfilename = "container.sock"
+	containerSockFilename = "container.sock"
+	stateFilename         = "state.json"
+	configFilename        = "config.json"
 )
 
 type Container struct {
@@ -149,7 +151,7 @@ func (c *Container) Save() error {
 	slog.Debug("saving container state", "id", c.State.ID, "status", c.State.Status)
 
 	if err := os.MkdirAll(
-		filepath.Join(c.Dirs.State, c.State.ID),
+		c.stateDir(),
 		0755,
 	); err != nil {
 		slog.Error("failed to create container directory", "id", c.State.ID, "err", err)
@@ -163,7 +165,7 @@ func (c *Container) Save() error {
 	}
 
 	if err := os.WriteFile(
-		filepath.Join(c.Dirs.State, c.State.ID, "state.json"),
+		c.statePath(),
 		state,
 		0755,
 	); err != nil {
@@ -179,7 +181,7 @@ func Load(id string, dirs filesystem.Dirs) (*Container, error) {
 	slog.Debug("loading container", "id", id)
 
 	s, err := os.ReadFile(
-		filepath.Join(dirs.State, id, "state.json"),
+		filepath.Join(dirs.State, id, stateFilename),
 	)
 
 	if err != nil {
@@ -194,7 +196,7 @@ func Load(id string, dirs filesystem.Dirs) (*Container, error) {
 	}
 
 	config, err := os.ReadFile(
-		filepath.Join(state.Bundle, "config.json"),
+		filepath.Join(state.Bundle, configFilename),
 	)
 
 	if err != nil {
@@ -211,6 +213,7 @@ func Load(id string, dirs filesystem.Dirs) (*Container, error) {
 	c := &Container{
 		State: state,
 		Spec:  spec,
+		Dirs:  dirs,
 	}
 
 	slog.Debug("container loaded", "id", id, "status", state.Status, "pid", state.Pid)
@@ -314,11 +317,10 @@ func (c *Container) Reexec() error {
 	// TODO: configure cntr
 
 	// send ready
-	dirs := c.Dirs
 	slog.Debug("dialing init sock", "id", c.State.ID)
 	initConn, err := net.Dial(
 		"unix",
-		filepath.Join(dirs.Runtime, c.State.ID, initSockFilename),
+		c.initSockPath(),
 	)
 	if err != nil {
 		slog.Error("failed to dial init sock", "id", c.State.ID, "err", err)
@@ -346,7 +348,7 @@ func (c *Container) Reexec() error {
 	slog.Debug("listening on container sock, waiting for start", "id", c.State.ID)
 	listener, err := net.Listen(
 		"unix",
-		filepath.Join(dirs.Runtime, c.State.ID, containerSockfilename),
+		c.containerSockPath(),
 	)
 
 	if err != nil {
@@ -438,7 +440,7 @@ func (c *Container) Start() error {
 	slog.Debug("dialing container sock to send start", "id", c.State.ID)
 	conn, err := net.Dial(
 		"unix",
-		filepath.Join(c.Dirs.Runtime, c.State.ID, containerSockfilename),
+		c.containerSockPath(),
 	)
 	if err != nil {
 		slog.Error("failed to dial container sock", "id", c.State.ID, "err", err)
@@ -465,6 +467,16 @@ func (c *Container) Start() error {
 
 	slog.Info("container started", "id", c.State.ID, "status", c.State.Status)
 	return nil
+}
+
+// path helpers
+
+func (c *Container) stateDir() string     { return filepath.Join(c.Dirs.State, c.State.ID) }
+func (c *Container) statePath() string    { return filepath.Join(c.stateDir(), stateFilename) }
+func (c *Container) runtimeDir() string   { return filepath.Join(c.Dirs.Runtime, c.State.ID) }
+func (c *Container) initSockPath() string { return filepath.Join(c.runtimeDir(), initSockFilename) }
+func (c *Container) containerSockPath() string {
+	return filepath.Join(c.runtimeDir(), containerSockFilename)
 }
 
 // cleanupOnErr - if an error occurs during the creation of a container
@@ -494,13 +506,13 @@ func (c *Container) removeContainerFiles() error {
 	slog.Debug("removing container state and runtime files", "id", c.State.ID)
 
 	if err := os.RemoveAll(
-		filepath.Join(c.Dirs.State, c.State.ID),
+		c.stateDir(),
 	); err != nil {
 		slog.Error("failed to delete container state directory", "id", c.State.ID, "err", err)
 		return fmt.Errorf("delete container directory: %w", err)
 	}
 
-	dir := filepath.Join(c.Dirs.Runtime, c.State.ID)
+	dir := c.runtimeDir()
 	if err := os.RemoveAll(dir); err != nil {
 		slog.Error("failed to remove container runtime directory", "id", c.State.ID, "dir", dir, "err", err)
 		return fmt.Errorf("remove container runtime dir: %w", err)
@@ -555,7 +567,7 @@ func (c *Container) execHooks(he hooks.HookEvent) error {
 }
 
 func (c *Container) listenUnix() (net.Listener, error) {
-	sockPath := filepath.Join(c.Dirs.Runtime, c.State.ID, initSockFilename)
+	sockPath := c.initSockPath()
 	slog.Debug("listening on init sock", "id", c.State.ID, "path", sockPath)
 	slog.Debug("creating unix listener", "path", sockPath)
 

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/michael-duren/boxes/internal/container"
+	"github.com/michael-duren/boxes/internal/filesystem"
 )
 
 type StateOpts struct {
@@ -15,7 +16,7 @@ type StateOpts struct {
 func State(opts *StateOpts) (string, error) {
 	slog.Debug("state operation", "id", opts.ID)
 
-	cntr, err := container.Load(opts.ID)
+	cntr, err := container.Load(opts.ID, filesystem.GetDirs())
 	if err != nil {
 		slog.Error("failed to load container", "id", opts.ID, "err", err)
 		return "", fmt.Errorf("load container: %w", err)
