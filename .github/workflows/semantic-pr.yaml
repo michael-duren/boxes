@@ -1,0 +1,50 @@
+name: semantic-pr
+
+# Validate that PR titles follow Conventional Commits, since merges squash the
+# PR title into the commit subject (see the feat:/fix:/chore: history).
+on:
+  pull_request_target:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+
+concurrency:
+  group: semantic-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  pull-requests: read
+
+jobs:
+  validate:
+    name: Validate PR title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR title is a Conventional Commit
+        uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Allowed types — keep in sync with the labels in scripts/post-issues.sh
+          # and the project's commit history.
+          types: |
+            feat
+            fix
+            chore
+            docs
+            refactor
+            test
+            ci
+            perf
+            build
+            style
+            revert
+          # Scopes are optional, e.g. feat(container): ...
+          requireScope: false
+          # Enforce lowercase first character of the subject (e.g. "add x", not "Add x").
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            The subject "{subject}" should start with a lowercase letter, e.g.
+            "feat(container): add lifecycle hooks".
