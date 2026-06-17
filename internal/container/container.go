@@ -36,6 +36,14 @@ type NewContainerOpts struct {
 	Spec   *specs.Spec
 }
 
+func containerExists(containerID string) bool {
+	dirs := filesystem.GetDirs()
+	_, err := os.Stat(filepath.Join(dirs.State, containerID))
+	found := err == nil
+	slog.Debug("checking if container exists", "id", containerID, "exists", found)
+	return found
+}
+
 func New(opts *NewContainerOpts) (*Container, error) {
 	slog.Debug("creating new container", "id", opts.ID, "bundle", opts.Bundle)
 
@@ -73,11 +81,8 @@ func (c *Container) Init() (err error) {
 		return err
 	}
 
-	sockPath := filepath.Join(filesystem.GetDirs().Runtime, c.State.ID, initSockFilename)
-	slog.Debug("listening on init sock", "id", c.State.ID, "path", sockPath)
-	listener, err := listenUnix(sockPath)
+	listener, err := c.listenUnix()
 	if err != nil {
-		slog.Error("failed to listen on init sock", "id", c.State.ID, "path", sockPath, "err", err)
 		return c.cleanupOnErr(err)
 	}
 
@@ -551,4 +556,33 @@ func (c *Container) execHooks(he hooks.HookEvent) error {
 
 	slog.Debug("hooks executed", "id", c.State.ID, "event", he)
 	return nil
+}
+
+func (c *Container) listenUnix() (net.Listener, error) {
+	sockPath := filepath.Join(filesystem.GetDirs().Runtime, c.State.ID, initSockFilename)
+	slog.Debug("listening on init sock", "id", c.State.ID, "path", sockPath)
+	slog.Debug("creating unix listener", "path", sockPath)
+
+	if err := os.MkdirAll(filepath.Dir(sockPath), 0755); err != nil {
+		slog.Error("failed to create socket directory", "path", sockPath, "err", err)
+		return nil, fmt.Errorf("unable to create socket directory: %w", err)
+	}
+
+	if err := os.Remove(sockPath); err != nil && !os.IsNotExist(err) {
+		slog.Error("failed to remove stale socket", "path", sockPath, "err", err)
+		return nil, fmt.Errorf("remove stale sock: %w", err)
+	}
+
+	listener, err := net.Listen(
+		"unix",
+		sockPath,
+	)
+
+	if err != nil {
+		slog.Error("failed to listen on unix socket", "path", sockPath, "err", err)
+		return nil, fmt.Errorf("listen on init sock: %w", err)
+	}
+
+	slog.Debug("unix listener created", "path", sockPath)
+	return listener, nil
 }
