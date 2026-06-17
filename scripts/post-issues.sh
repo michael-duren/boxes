@@ -56,6 +56,31 @@ if [[ -n "${REPO:-}" ]]; then
     REPO_ARGS=(--repo "$REPO")
 fi
 
+# preflight_auth — make sure gh can actually WRITE to the repo before we start.
+#
+# gh prioritizes the GITHUB_TOKEN/GH_TOKEN env vars over its stored login. A
+# token without the `repo` scope can still READ (so `gh label list` succeeds) but
+# every WRITE (label/issue create) comes back as HTTP 404 — GitHub returns 404
+# rather than 403 for unauthorized writes. That makes the failure look like a
+# missing repo. Detect a scope-less env token and fall back to the stored login.
+preflight_auth() {
+    if [[ -n "${GH_TOKEN:-}${GITHUB_TOKEN:-}" ]]; then
+        local scopes
+        scopes="$(gh api -i user 2>/dev/null \
+            | awk -F': ' 'tolower($1)=="x-oauth-scopes"{print $2}' | tr -d ' \r')"
+        if [[ ",${scopes}," != *",repo,"* ]]; then
+            echo "warning: ignoring GH_TOKEN/GITHUB_TOKEN — missing 'repo' scope (scopes: '${scopes:-none}')" >&2
+            echo "         falling back to gh's stored login (run 'gh auth login' if this fails)." >&2
+            unset GH_TOKEN GITHUB_TOKEN
+        fi
+    fi
+
+    if ! gh auth status >/dev/null 2>&1; then
+        echo "error: gh is not authenticated. Run: gh auth login" >&2
+        exit 1
+    fi
+}
+
 # --------------------------------------------------------------------------
 # Front-matter helpers (no external YAML parser; just first `---`...`---` block)
 # --------------------------------------------------------------------------
@@ -199,6 +224,9 @@ fi
 echo "Issues directory: $ISSUES_DIR"
 echo "Found ${#FILES[@]} issue file(s)."
 echo
+
+# 0. Make sure we're authenticated with write access before touching the API.
+preflight_auth
 
 # 1. Ensure every referenced label exists.
 ALL_LABELS="$(for f in "${FILES[@]}"; do split_labels "$(fm_value "$f" labels)"; done | sort -u)"
