@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"golang.org/x/sys/unix"
 
 	"github.com/michael-duren/boxes/internal/assert"
 	"github.com/michael-duren/boxes/internal/container"
@@ -135,6 +136,74 @@ func TestSave(t *testing.T) {
 		got := readState(t, dirs, "mycontainer")
 		assert.DeepEqual(t, got, c.State)
 	})
+}
+
+func TestStart(t *testing.T) {
+	t.Run("errors when spec has no process", func(t *testing.T) {
+		dirs := createDirs(t)
+		c := newContainer(t, dirs, "mycontainer", "alpinefs", testSpec())
+		c.Spec.Process = nil
+
+		assert.Error(t, c.Start())
+	})
+
+	t.Run("errors when not in created state", func(t *testing.T) {
+		dirs := createDirs(t)
+		c := newContainer(t, dirs, "mycontainer", "alpinefs", testSpec())
+		// A freshly built container is in StateCreating, not StateCreated, so
+		// Start must reject it before dialing the container socket.
+
+		assert.Error(t, c.Start())
+	})
+
+	// TODO(tdd): the happy path dials the container's unix socket expecting a
+	// reexec'd process to be listening. Cover it with an acceptance test, or once
+	// socket dialing sits behind an injectable seam.
+}
+
+func TestKill(t *testing.T) {
+	t.Run("errors when container cannot be killed in current state", func(t *testing.T) {
+		dirs := createDirs(t)
+		c := newContainer(t, dirs, "mycontainer", "alpinefs", testSpec())
+		// StateCreating is neither Running nor Created.
+
+		assert.Error(t, c.Kill(unix.SIGTERM))
+	})
+
+	t.Run("errors when pid is invalid", func(t *testing.T) {
+		dirs := createDirs(t)
+		c := newContainer(t, dirs, "mycontainer", "alpinefs", testSpec())
+		c.State.Status = specs.StateCreated // passes the state guard...
+		c.State.Pid = 0                     // ...but the pid is invalid
+
+		assert.Error(t, c.Kill(unix.SIGTERM))
+	})
+
+	// TODO(tdd): killing a live process (the happy path) calls unix.Kill and runs
+	// poststop hooks. Exercise it in an acceptance test against a real process.
+}
+
+func TestDelete(t *testing.T) {
+	t.Run("errors when not stopped and not forced", func(t *testing.T) {
+		dirs := createDirs(t)
+		c := newContainer(t, dirs, "mycontainer", "alpinefs", testSpec())
+		// StateCreating is not deletable without --force.
+
+		assert.Error(t, c.Delete(false))
+	})
+
+	// WARNING: do not unit-test the force / Stopped path here. Delete calls
+	// os.FindProcess(pid) then Signal(SIGKILL); with the default pid 0 that
+	// targets the whole process group and would kill the test runner. Cover
+	// deletion in an acceptance test with a real, owned process.
+}
+
+func TestInit(t *testing.T) {
+	t.Skip("Init reexecs /proc/self/exe and coordinates over unix sockets; cover via acceptance tests")
+}
+
+func TestReexec(t *testing.T) {
+	t.Skip("Reexec dials unix sockets and ends in syscall.Exec; cover via acceptance tests")
 }
 
 func createDirs(t *testing.T) filesystem.Dirs {
