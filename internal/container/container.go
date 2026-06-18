@@ -2,6 +2,7 @@ package container
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -46,6 +47,11 @@ func New(opts *NewContainerOpts) (*Container, error) {
 	if _, err := os.Stat(filepath.Join(opts.Dirs.State, opts.ID)); err == nil {
 		slog.Warn("container already exists", "id", opts.ID)
 		return nil, fmt.Errorf("container '%s' exists", opts.ID)
+	}
+
+	if opts.Spec == nil {
+		slog.Error("nil pointer as spec.Specs")
+		return nil, errors.New("container.New a nil pointer was passed as spec.Specs")
 	}
 
 	state := specs.State{
@@ -152,7 +158,7 @@ func (c *Container) Save() error {
 
 	if err := os.MkdirAll(
 		c.stateDir(),
-		0755,
+		0o755,
 	); err != nil {
 		slog.Error("failed to create container directory", "id", c.State.ID, "err", err)
 		return fmt.Errorf("create container directory: %w", err)
@@ -167,7 +173,7 @@ func (c *Container) Save() error {
 	if err := os.WriteFile(
 		c.statePath(),
 		state,
-		0755,
+		0o755,
 	); err != nil {
 		slog.Error("failed to write container state", "id", c.State.ID, "err", err)
 		return fmt.Errorf("write container state: %w", err)
