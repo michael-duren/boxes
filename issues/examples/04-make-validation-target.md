@@ -10,6 +10,12 @@ Add a `make validation` (and/or `scripts/validation.sh`) target that builds
 `box`, points the integrated runtime-tools suite at it, and runs the validation
 tests locally with one command.
 
+> A starting point already exists: `scripts/oci-validation.sh` (from
+> {{issue:01-research-suite.md}}) builds `box`, builds the suite, and runs a
+> chosen test via `TEST=...` with a TAP consumer (`prove`). This task wraps
+> it as `make validation` and switches its source from the `.cache/` clone to the
+> pinned submodule ({{issue:03-integrate-suite.md}}).
+
 The target should:
 
 - Build the `box` binary (reuse existing `make` build wiring).

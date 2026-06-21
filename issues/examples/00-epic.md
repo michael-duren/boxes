@@ -35,7 +35,7 @@ mentioned here so we have an objective, upstream-defined measure of how close
 
 ## Tasks
 
-- [ ] {{issue:01-research-suite.md}} Research the OCI runtime-tools validation suite & CLI contract
+- [x] {{issue:01-research-suite.md}} Research the OCI runtime-tools validation suite & CLI contract — see [`docs/oci-validation.md`](../../docs/oci-validation.md)
 - [ ] {{issue:02-cli-conformance.md}} Make `box` conform to the OCI Runtime Command Line Interface
 - [ ] {{issue:03-integrate-suite.md}} Integrate the runtime-tools validation suite into the repo
 - [ ] {{issue:04-make-validation-target.md}} Add a local `make validation` target to run the suite against `box`
@@ -49,13 +49,24 @@ mentioned here so we have an objective, upstream-defined measure of how close
 - Forking or re-implementing the upstream validation tests; we consume them.
 - Conformance for the OCI **image** or **distribution** specs — runtime spec only.
 
-## Open questions
+## Open questions — resolved by research ({{issue:01-research-suite.md}})
 
-- Vendor the runtime-tools suite, pull it as a git submodule, or fetch it at
-  test time in CI? (trade-off: reproducibility vs. repo size/churn)
-- Which runtime-spec version do we target first (`runtime-spec v1.2.0`, already a
-  dependency in `go.mod`)?
-- Do rootless-only constraints on the dev machine limit which tests can run?
+See [`docs/oci-validation.md`](../../docs/oci-validation.md) for full rationale.
+
+- **Vendor / submodule / fetch-in-CI?** → **git submodule**, pinned at
+  runtime-tools commit `e5b4542`. Pins an exact commit (reproducible), keeps the
+  foreign module + its checked-in rootfs tarballs out of our history, and is
+  offline after one `submodule update --init`. (Vendoring bloats the tree;
+  fetch-in-CI needs a network clone every run.)
+- **Which runtime-spec version?** → **v1.2.0** (`ociVersion` `"1.2.0"`), the
+  current `go.mod` pin. No runtime-tools tag matches it (tags stop at v0.9.0,
+  2019; master skipped v1.2.x for v1.3.0), so we pin the suite to commit
+  `e5b4542` — the last commit on runtime-spec v1.1.0, which is API-compatible
+  with v1.2.0.
+- **Do rootless constraints limit which tests run?** → **Yes, heavily.** Almost
+  every test needs root + user namespaces; on a rootless host even `runc` can't
+  pass `create`. Meaningful runs need a privileged Linux host (local `sudo` or a
+  CI runner). Confirmed by running the suite against `box` (and `runc`).
 
 ## Target milestone
 

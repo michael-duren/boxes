@@ -6,17 +6,31 @@ uploaded:
 
 ## What needs to be done
 
-Bring the `opencontainers/runtime-tools` validation suite into the project using
-the integration approach chosen during research (vendor / git submodule /
-fetch-in-CI). Get the suite building and able to invoke `box` as `RUNTIME`.
+Bring the `opencontainers/runtime-tools` validation suite into the project as a
+**git submodule** pinned at commit `e5b4542` — the approach chosen during
+research ({{issue:01-research-suite.md}}, see
+[`docs/oci-validation.md` §4](../../docs/oci-validation.md)). Get the suite
+building and able to invoke `box` as `RUNTIME`.
 
 Includes:
 
-- Adding the suite to the repo via the chosen mechanism (and documenting how to
-  update/pin it).
+- Adding the submodule at `third_party/runtime-tools` pinned to commit
+  `e5b454202754ff211f8dbeb98a398b5c3d346b79` (last commit before master moved to
+  runtime-spec v1.3.0; aligns with our v1.2.0 pin). Document the update flow
+  (bump the submodule ref, commit).
 - Ensuring the `runtimetest` helper and validation test binaries build in our
-  environment (Go toolchain, bats dependency).
-- A reproducible way to point the suite at the locally-built `box` binary.
+  environment. **Dependencies are the Go toolchain + `prove` (Perl TAP::Harness)
+  — NOT bats, and NOT modern node-tap.** The suite has no `.bats` files; tests
+  compile to `.t` ELF binaries that emit TAP, and current node-tap (v15+) can't
+  execute them (it imports test files as JS/TS). The arch rootfs tarballs
+  (`rootfs-amd64.tar.gz`) are checked into the upstream repo, so no Docker/rootfs
+  build is needed.
+- Repointing `scripts/oci-validation.sh` from its current `.cache/` scratch
+  clone to the submodule path so dev and CI share one source of truth.
+
+> Note: `scripts/oci-validation.sh` already drives the suite against `box` from a
+> gitignored `.cache/` clone (landed with the research task); this issue makes
+> that source the pinned submodule instead.
 
 ## Acceptance criteria
 

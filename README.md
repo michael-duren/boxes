@@ -142,6 +142,20 @@ Project layout:
 └── go.mod
 ```
 
+### OCI conformance
+
+`box` is measured against the upstream
+[`opencontainers/runtime-tools`](https://github.com/opencontainers/runtime-tools)
+validation suite. See [docs/oci-validation.md](docs/oci-validation.md) for the
+CLI contract, suite mechanics, and version pin. To drive one validation test
+against the locally-built `box` (expected to fail during development — needs
+root + user namespaces):
+
+```sh
+./scripts/oci-validation.sh            # runs validation/default
+TEST=state ./scripts/oci-validation.sh # run a specific test
+```
+
 ## Roadmap
 
 - [ ] Wire `create` to fork+exec an init process in new namespaces

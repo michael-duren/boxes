@@ -20,6 +20,9 @@ run:
 test:
 	go test ./...
 
+runtime-test:
+	@./scripts/oci-validation.sh
+
 vet:
 	go vet ./...
 

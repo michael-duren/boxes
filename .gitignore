@@ -27,6 +27,9 @@ go.work.sum
 # env file
 .env
 
+# OCI validation suite scratch clone (see scripts/oci-validation.sh)
+.cache/
+
 # Editor/IDE
 # .idea/
 # .vscode/

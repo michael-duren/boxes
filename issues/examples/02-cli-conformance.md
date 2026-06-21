@@ -23,8 +23,29 @@ This means aligning the existing lifecycle verbs with the spec:
 Match the flag names, positional arguments, exit codes, and stdout/stderr
 behavior the suite expects (per the research note from the prior task).
 
+## Gaps found during research ({{issue:01-research-suite.md}})
+
+Verified by running the harness against the built `box` (see
+[`docs/oci-validation.md` §6](../../docs/oci-validation.md)):
+
+- **`box create` rejects `--pid-file`** with `unknown flag` (exit 1). The harness
+  sends `create [--pid-file <path>] --bundle <dir> <id>`. **Add `--pid-file` and
+  write the container PID to it** — the `pidfile` test reads the file contents.
+- **Logging must stay off stdout** — `state` is the only command allowed to write
+  stdout (the state JSON), and `create` (non-terminal) must pass stdout through
+  to the container untouched. `box` already routes `slog` to a log file, so this
+  holds; keep it that way.
+- **Already conformant:** `kill` takes the signal **positionally** (`kill <id>
+  <signal>`), which is exactly how the harness invokes it — no `--signal` flag
+  needed. `state` already emits the correct `specs.State` fields/status enum.
+- **Lower priority:** `--console-socket` (the harness never sends it; only needed
+  for `terminal: true` bundles). The bulk of real conformance work is the
+  namespace / rootfs / mount setup in `internal/container` so `start` can exec
+  the bundle's process (`/runtimetest`).
+
 ## Acceptance criteria
 
+- [ ] `box create` accepts `--pid-file` and writes the container PID to it
 - [ ] `create`, `start`, `state`, `kill`, `delete` accept the spec's args/flags
 - [ ] `box state` outputs valid OCI state JSON matching the runtime-spec schema
 - [ ] Exit codes follow the CLI spec (0 on success, non-zero with a message on failure)
