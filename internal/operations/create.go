@@ -10,6 +10,7 @@ import (
 	"github.com/opencontainers/runtime-spec/specs-go"
 
 	"github.com/michael-duren/boxes/internal/container"
+	"github.com/michael-duren/boxes/internal/filesystem"
 )
 
 type CreateOpts struct {
@@ -46,7 +47,9 @@ func Create(opts *CreateOpts) error {
 		ID:     opts.ID,
 		Bundle: bundle,
 		Spec:   spec,
+		Dirs:   filesystem.GetDirs(),
 	})
+
 	if err != nil {
 		slog.Error("failed to create container", "id", opts.ID, "err", err)
 		return fmt.Errorf("create container: %w", err)

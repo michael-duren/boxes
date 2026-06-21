@@ -20,6 +20,7 @@ func createCmd() *cobra.Command {
 				return err
 			}
 
+			cmd.SilenceUsage = true
 			return operations.Create(&operations.CreateOpts{
 				ID:     containerID,
 				Bundle: bundle,
