@@ -29,8 +29,12 @@ document (CLI spec v1.0.1).
   _live_ container against `config.json` from the inside and prints
   [TAP](https://testanything.org/).
 - **It is not bats.** The suite emits TAP from self-contained Go test binaries
-  (`validation/<feature>/<feature>.t`) and aggregates with a TAP consumer
-  (node-tap `tap`, or `prove`). There are no `.bats` files anywhere in the repo.
+  (`validation/<feature>/<feature>.t`) that **self-emit TAP when executed** — so
+  `scripts/oci-validation.sh` just runs them directly and tallies the results
+  (no consumer needed). `prove` is an optional aggregator. The upstream Makefile
+  defaults to node-tap (`tap`), but **current node-tap (v21) cannot run this
+  suite** — it imports test files as JS/TS and chokes on the Go ELF `.t`
+  binaries. There are no `.bats` files anywhere.
 - **Version:** target **runtime-spec v1.2.0** (`ociVersion` `"1.2.0"`), already
   pinned in `go.mod`. Pin the suite to runtime-tools commit
   [`e5b4542`](https://github.com/opencontainers/runtime-tools/commit/e5b454202754ff211f8dbeb98a398b5c3d346b79)
@@ -170,7 +174,8 @@ localvalidation:             # checks binaries exist, then:
   `.t` binary. (`localvalidation` does **not** build — it only checks they
   exist, then runs them.)
 - `RUNTIME=<bin> make localvalidation` exports `RUNTIME` and hands all `.t`
-  binaries to `$(TAPTOOL)` (node-tap `tap` by default; `prove` works too).
+  binaries to `$(TAPTOOL)` (defaults to node-tap `tap`; **use `prove`** — see the
+  consumer note below).
 - Single test / subset: override `VALIDATION_TESTS`, e.g.
   `sudo make RUNTIME=box VALIDATION_TESTS=validation/state/state.t localvalidation`,
   or run the binary directly: `RUNTIME=box ./validation/state/state.t`.
@@ -185,8 +190,14 @@ other runtime-selection env var is used.
 ### Dependencies & environment
 
 - **Go 1.19+** to build the suite and `box`.
-- **A TAP consumer:** node-tap (`npm i -g tap`) _or_ `prove` (ships with Perl).
-  **Not bats.**
+- **No TAP consumer is strictly needed** — the `.t` binaries self-emit TAP, so
+  you can run them directly and tally `ok`/`not ok` yourself (what our script's
+  default `direct` runner does). For aggregation you _may_ use **`prove`** (ships
+  with Perl). **Not bats**, and **not modern node-tap** — node-tap v15+ runs test
+  files as JS/TS in-process and can't execute the compiled `.t` binaries (you get
+  `SyntaxError: Invalid or unexpected token` as it parses the ELF header). The
+  upstream `TAPTOOL=tap` default assumed a pre-v15 node-tap that spawned
+  executables; it no longer applies.
 - **`tar`** — the suite shells out to extract `rootfs-<arch>.tar.gz`.
 - **Rootfs tarballs are checked into the upstream repo** (`rootfs-amd64.tar.gz`,
   `rootfs-386.tar.gz`) — no Docker/buildroot step needed. The `.t` binary
@@ -290,25 +301,43 @@ Error: initialize container: accept on init sock: ... i/o timeout
 Clean: Delete: ... exit status 1
 ```
 
-Some host-side checks still run, though — e.g. `TEST=state` drives `box state`
-and reports a **passing** subtest even rootless:
+Some host-side checks still run, though. The script runs each `.t` directly and
+prints a pass/fail/errored summary, so partial progress is visible even rootless:
 
 ```
-$ TEST=state ./scripts/oci-validation.sh
-validation/state/state.t .. All 1 subtests passed
+$ TEST="state kill delete" ./scripts/oci-validation.sh
+#   → state:  2 passed, 1 failed  [FAIL]
+#   → kill:   3 passed, 2 failed  [FAIL]
+#   → delete: 3 passed, 4 failed  [FAIL]
+>> summary: 8 passed, 7 failed, 0 errored
 ```
 
 This confirms three things the epic predicted: (a) the harness can invoke `box`
-unmodified, (b) `box`'s `state` JSON already satisfies a real validation check,
-and (c) the suite needs **root + user namespaces** for almost everything else.
-Running the full suite meaningfully requires a privileged Linux host (local
-`sudo` or a CI runner) — see issue 05.
+unmodified, (b) `box` already passes a chunk of the host-side assertions (e.g.
+`state` arg-validation), and (c) the suite needs **root + user namespaces** for
+almost everything else — the lifecycle tests that create a real container
+(`default`) `[ERROR]` out before emitting any TAP. Running the full suite
+meaningfully requires a privileged Linux host (local `sudo` or a CI runner) —
+see issue 05.
 
-> **TAP consumer note:** prefer node-tap's `tap`. `prove` works but its strict
-> YAMLish parser trips on the YAML diagnostic blocks `tap-go` emits (you'll see
-> `Unsupported YAMLish syntax` / `No plan found` and a spurious `Result: FAIL`
-> even when the subtests pass). The script prefers `tap` when installed and falls
-> back to `prove`; install node-tap (`npm i -g tap`) for clean parsing.
+> **How the script consumes TAP — and why not node-tap.** The default `direct`
+> runner just **executes each `.t`** (they self-emit TAP) and tallies `ok` /
+> `not ok`, distinguishing three outcomes: *passed*, *failed* (a `not ok` line),
+> and *errored* (non-zero exit with no TAP at all — e.g. a rootless `create`
+> crash; a naive `grep "not ok" | wc -l` would miscount these as zero failures).
+> No external consumer is required.
+>
+> `RUNNER=prove` switches to Perl's TAP::Harness, which also executes the binary
+> but has one cosmetic wart: its strict YAMLish parser rejects the flow-style
+> `{...}` diagnostic blocks `tap-go` emits, so you may see `Unsupported YAMLish
+> syntax` and a spurious `Result: FAIL` *even when assertions pass*.
+>
+> **Do not use node-tap.** v15+ (e.g. v21) imports test files as JS/TS rather
+> than executing them, so it dies on the compiled Go `.t` binaries with
+> `SyntaxError: Invalid or unexpected token` (parsing the ELF header). A global
+> `npm i -g tap` won't even run standalone — v21 resolves its runner from the
+> *current project's* `node_modules`, so a bare global install errors with
+> `Cannot find package 'tap'`.
 
 ---
 
@@ -344,11 +373,12 @@ Verified by running the harness against the built `box` binary:
   `--console-socket` can wait.
 - **03 (integrate suite):** use a **git submodule** at `third_party/runtime-tools`
   pinned to `e5b4542`; document the update (bump-ref) flow; repoint
-  `scripts/oci-validation.sh` at the submodule. Note: dependency is **node-tap
-  or `prove`**, _not bats_ (the issue text said bats — that's incorrect).
+  `scripts/oci-validation.sh` at the submodule. Note: the TAP consumer is
+  **`prove`**, _not bats_ (the issue text said bats — incorrect) and _not_ modern
+  node-tap (can't execute the compiled `.t` binaries).
 - **04 (`make validation`):** wrap the script as a `make validation` target;
   `TEST=`/`VALIDATION_TESTS=` for subsets; non-fatal on failures.
 - **05 (CI):** privileged Linux runner; `continue-on-error`; upload TAP as an
   artifact. Document the rootless limitation.
-- **06 (reporting):** parse TAP (node-tap/`prove` both emit it) into a
+- **06 (reporting):** parse the TAP `prove` emits (or raw `.t` output) into a
   pass/fail summary; snapshot a baseline.

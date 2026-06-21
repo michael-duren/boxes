@@ -18,8 +18,11 @@
 #   TEST="state kill delete" ./scripts/oci-validation.sh
 #   RUNNER=prove ./scripts/oci-validation.sh     # force the TAP consumer
 #
-# Requires: go (1.19+), git, tar, and a TAP consumer (`prove` from Perl, or
-# node-tap's `tap`). Run on Linux; use `sudo -E` for tests that need root.
+# Requires: go (1.19+), git, tar. No TAP consumer needed — the default 'direct'
+# runner executes each compiled `.t` and tallies ok/not-ok itself. RUNNER=prove
+# uses Perl's TAP::Harness instead. Run on Linux; use `sudo -E` for tests that
+# need root. (Do NOT use node-tap: v15+ imports test files as JS/TS and can't
+# execute the Go ELF `.t` binaries — see docs/oci-validation.md §5.)
 
 set -euo pipefail
 
@@ -60,34 +63,64 @@ for t in $TESTS; do
     ( cd "$SUITE_DIR" && go build -o "validation/$t/$t.t" "validation/$t/$t.go" )
 done
 
-# 4. Pick a TAP consumer: explicit $RUNNER, else node-tap `tap`, else `prove`,
-#    else run the .t binaries directly (they emit TAP themselves).
-#    NB: probe that the tool actually RUNS, not just that it's on PATH — a
-#    version-manager shim (e.g. mise) can put a `tap` on PATH that errors out
-#    ("Cannot find package 'tap'") because the package isn't really installed.
-runner="${RUNNER:-}"
-if [[ -z "$runner" ]]; then
-    if tap --version >/dev/null 2>&1; then runner="tap"
-    elif prove --version >/dev/null 2>&1; then runner="prove"
-    else runner="direct"; fi
-fi
+# 4. Choose how to consume the tests' TAP. Each `.t` is a compiled executable
+#    that emits TAP itself, so the simplest, dependency-free path is to run them
+#    directly and tally ok/not-ok from the output — that's the default
+#    ('direct'). RUNNER=prove uses Perl's TAP::Harness instead (heads-up: its
+#    strict YAMLish parser flags a spurious FAIL on tap-go's `{...}` diagnostic
+#    blocks even when the assertions pass). node-tap is intentionally unsupported.
+runner="${RUNNER:-direct}"
+logdir="$REPO_ROOT/.cache/validation-logs"
+mkdir -p "$logdir"
 
 # 5. Run. Must run from the suite root so the .t binaries find rootfs-*.tar.gz.
 echo ">> running tests against RUNTIME=$BOX_BIN via '$runner'"
 echo "   (expected to fail on a rootless host — see docs/oci-validation.md §5)"
 echo
-test_paths=()
-for t in $TESTS; do test_paths+=("validation/$t/$t.t"); done
-
 cd "$SUITE_DIR"
 export RUNTIME="$BOX_BIN"
-# Test failures are expected during the conformance epic, so don't let a red
-# suite fail this script — it has done its job once the tests have run.
-case "$runner" in
-    tap)    tap "${test_paths[@]}" || true ;;
-    prove)  prove -v "${test_paths[@]}" || true ;;
-    direct) for p in "${test_paths[@]}"; do echo "# $p"; "./$p" || true; done ;;
-esac
 
-echo
-echo ">> done — the suite ran against box (see TAP above for pass/fail)"
+if [[ "$runner" == "prove" ]]; then
+    paths=(); for t in $TESTS; do paths+=("validation/$t/$t.t"); done
+    # Failures are expected during the conformance epic; don't abort the script.
+    prove -v "${paths[@]}" || true
+    echo
+    echo ">> done — the suite ran against box (see TAP above for pass/fail)"
+    exit 0
+fi
+
+# 'direct': run each test, tee its TAP to a log, then summarise.
+pass_total=0 fail_total=0 err_total=0
+for t in $TESTS; do
+    log="$logdir/$t.log"
+    echo "# ── $t ──────────────────────────────"
+    # A failing test exits non-zero; capture that via PIPESTATUS without letting
+    # `set -e` abort the loop (drop errexit just around the run).
+    set +e
+    "./validation/$t/$t.t" 2>&1 | tee "$log"
+    rc=${PIPESTATUS[0]}
+    set -e
+
+    pass=$(grep -cE '^[[:space:]]*ok ' "$log" || true)
+    fail=$(grep -cE '^[[:space:]]*not ok ' "$log" || true)
+
+    # A non-zero exit with no "not ok" line means the test crashed before (or
+    # without) emitting TAP — e.g. `create` failing on a rootless host. Count it
+    # as an error so a hard failure isn't silently read as "0 failures" (the bug
+    # in a plain `grep "not ok" | wc -l` approach).
+    status="ok"
+    if [[ "$rc" -ne 0 && "$fail" -eq 0 ]]; then
+        err_total=$((err_total + 1)); status="ERROR (exit $rc, no TAP emitted)"
+    elif [[ "$fail" -gt 0 ]]; then
+        status="FAIL"
+    fi
+    pass_total=$((pass_total + pass)); fail_total=$((fail_total + fail))
+    echo "#   → $t: ${pass} passed, ${fail} failed  [${status}]"
+    echo
+done
+
+echo "────────────────────────────────────────────"
+echo ">> summary: ${pass_total} passed, ${fail_total} failed, ${err_total} errored"
+echo "   logs in ${logdir#"$REPO_ROOT"/}/<test>.log"
+# Non-fatal: the suite is expected to be partially red during the epic.
+exit 0
