@@ -38,7 +38,7 @@ func NewRootCmd() *cobra.Command {
 
 	cmd.PersistentFlags().Bool("debug", false, "Enable debug logging")
 
-	// default show usage, nested cmds need to disable this when 
+	// default show usage, nested cmds need to disable this when
 	// runtime errors can occur
 	cmd.SilenceUsage = false
 
