@@ -22,9 +22,8 @@ func stateCmd() *cobra.Command {
 				return err
 			}
 
-			if _, err := cmd.OutOrStdout().Write(
-				[]byte(state),
-			); err != nil {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(),
+				"%s\n", state); err != nil {
 				return fmt.Errorf("write state to stdout: %w", err)
 			}
 

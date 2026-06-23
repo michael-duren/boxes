@@ -12,7 +12,7 @@ start:
 	box --debug start $(CONTAINER)
 
 state:
-	box --debug state $(CONTAINER) | jq
+	box --debug state $(CONTAINER)
 
 state-broken:
 	box --debug state 26ede6c5-5103-405b-ac03-348ffc42e35d 

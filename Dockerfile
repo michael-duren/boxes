@@ -16,6 +16,8 @@ WORKDIR /
 COPY --from=builder /bin/box /bin/box
 COPY ./alpinefs/ alpinefs/
 COPY Makefile.container Makefile
+RUN apt-get update && apt-get install -y make \
+  && rm -rf /var/lib/apt/lists/*
 
 # convience aliases
 RUN echo 'alias l="ls -la"' >> /root/.bashrc
