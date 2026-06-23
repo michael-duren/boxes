@@ -1,0 +1,27 @@
+# makefile to be copied to interactive container
+.PHONY: create start state state-broken kill delete force-delete
+
+# CONTAINER SPECIFIC SUB CMDS W EX ARGS
+CONTAINER := mycontainer
+IMG := alpinefs
+
+create:
+	box --debug create --bundle $(IMG) $(CONTAINER) 
+
+start:
+	box --debug start $(CONTAINER)
+
+state:
+	box --debug state $(CONTAINER) | jq
+
+state-broken:
+	box --debug state 26ede6c5-5103-405b-ac03-348ffc42e35d 
+
+kill:
+	box --debug kill $(CONTAINER) 9
+
+delete:
+	box --debug delete $(CONTAINER)
+
+force-delete:
+	box --debug delete --force $(CONTAINER)
