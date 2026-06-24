@@ -28,6 +28,10 @@ const (
 	configFilename        = "config.json"
 )
 
+// Container is the combination of
+// configurations and state for a container
+// OCI actions like create, start, stop, delete, kill
+// are executed against these configurations
 type Container struct {
 	State *specs.State
 	Spec  *specs.Spec
@@ -41,6 +45,8 @@ type NewContainerOpts struct {
 	Dirs   filesystem.Dirs
 }
 
+// Creates a new container with
+// the opts, fails if the container already exists or
 func New(opts *NewContainerOpts) (*Container, error) {
 	slog.Debug("creating new container", "id", opts.ID, "bundle", opts.Bundle)
 
