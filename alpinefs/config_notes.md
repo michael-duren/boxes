@@ -1,0 +1,179 @@
+# Config Notes
+
+## Properties
+
+### root
+
+`root` absolute or relative, value should be conventional `rootfs`
+if readonly cannot change fs
+
+### mounts
+
+array of objs, mounted in order, check mount 2 man pages
+need to read through mount optons in linux to get a better idea, must options
+correspond to mount(8)
+may also implement custom option strings that are not listed in table
+
+### process
+
+optional, ctr process, required when start is called
+terminal: if t attached to p
+cwd - must be abs path
+env array of strings
+args array of strings
+
+user: platform specific allows control 
+over which user process runs as
+"user": {
+        "uid": 1,
+        "gid": 1,
+        "umask": 63,
+        "additionalGids": [5, 6]
+    },
+
+### hostname
+
+obvious
+
+### domainname
+
+will have to come back tothat
+domainname changedin uts namespace
+
+Example config: 
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/opencontainers/runtime-spec/main/schema/config-schema.json",
+  "ociVersion": "1.3.0",
+  "process": {
+    "terminal": true,
+    "user": {
+      "uid": 0,
+      "gid": 0
+    },
+    "args": ["sleep", "60"],
+    "env": [
+      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+      "TERM=xterm"
+    ],
+    "cwd": "/",
+    "capabilities": {
+      "bounding": ["CAP_AUDIT_WRITE", "CAP_KILL", "CAP_NET_BIND_SERVICE"],
+      "effective": ["CAP_AUDIT_WRITE", "CAP_KILL", "CAP_NET_BIND_SERVICE"],
+      "permitted": ["CAP_AUDIT_WRITE", "CAP_KILL", "CAP_NET_BIND_SERVICE"]
+    },
+    "rlimits": [
+      {
+        "type": "RLIMIT_NOFILE",
+        "hard": 1024,
+        "soft": 1024
+      }
+    ],
+    "noNewPrivileges": true
+  },
+  "root": {
+    "path": "rootfs",
+    "readonly": true
+  },
+  "hostname": "box",
+  "mounts": [
+    {
+      "destination": "/proc",
+      "type": "proc",
+      "source": "proc"
+    },
+    {
+      "destination": "/dev",
+      "type": "tmpfs",
+      "source": "tmpfs",
+      "options": ["nosuid", "strictatime", "mode=755", "size=65536k"]
+    },
+    {
+      "destination": "/dev/pts",
+      "type": "devpts",
+      "source": "devpts",
+      "options": [
+        "nosuid",
+        "noexec",
+        "newinstance",
+        "ptmxmode=0666",
+        "mode=0620",
+        "gid=5"
+      ]
+    },
+    {
+      "destination": "/dev/shm",
+      "type": "tmpfs",
+      "source": "shm",
+      "options": ["nosuid", "noexec", "nodev", "mode=1777", "size=65536k"]
+    },
+    {
+      "destination": "/dev/mqueue",
+      "type": "mqueue",
+      "source": "mqueue",
+      "options": ["nosuid", "noexec", "nodev"]
+    },
+    {
+      "destination": "/sys",
+      "type": "sysfs",
+      "source": "sysfs",
+      "options": ["nosuid", "noexec", "nodev", "ro"]
+    },
+    {
+      "destination": "/sys/fs/cgroup",
+      "type": "cgroup",
+      "source": "cgroup",
+      "options": ["nosuid", "noexec", "nodev", "relatime", "ro"]
+    }
+  ],
+  "linux": {
+    "resources": {
+      "devices": [
+        {
+          "allow": false,
+          "access": "rwm"
+        }
+      ]
+    },
+    "namespaces": [
+      {
+        "type": "pid"
+      },
+      {
+        "type": "network"
+      },
+      {
+        "type": "ipc"
+      },
+      {
+        "type": "uts"
+      },
+      {
+        "type": "mount"
+      },
+      {
+        "type": "cgroup"
+      }
+    ],
+    "maskedPaths": [
+      "/proc/acpi",
+      "/proc/asound",
+      "/proc/kcore",
+      "/proc/keys",
+      "/proc/latency_stats",
+      "/proc/timer_list",
+      "/proc/timer_stats",
+      "/proc/sched_debug",
+      "/sys/firmware",
+      "/proc/scsi"
+    ],
+    "readonlyPaths": [
+      "/proc/bus",
+      "/proc/fs",
+      "/proc/irq",
+      "/proc/sys",
+      "/proc/sysrq-trigger"
+    ]
+  }
+}
+```
