@@ -80,7 +80,6 @@ func New(opts *NewContainerOpts) (*Container, error) {
 }
 
 func (c *Container) Init() (err error) {
-	initMaps()
 	slog.Info("initializing container", "id", c.State.ID, "bundle", c.State.Bundle)
 
 	if c.Spec.Linux == nil {

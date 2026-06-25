@@ -121,6 +121,24 @@ State for running containers is persisted under
 
 ## Development
 
+### Cross-compilation environment
+
+Boxes targets Linux. If developing on macOS (or another non-Linux OS), the
+project uses [direnv](https://direnv.net/) to automatically set `GOOS=linux`
+and `GOARCH=amd64` so that `gopls` and other Go tools resolve Linux-only
+symbols (e.g. `syscall.CLONE_*`, `unix.SIGKILL`).
+
+```sh
+brew install direnv          # if not already installed
+echo 'eval "$(direnv hook zsh)"' >> ~/.zshrc   # or your shell rc
+direnv allow                 # approve the project .envrc
+```
+
+These variables are scoped to this project directory and do not affect other
+Go projects.
+
+### Make targets
+
 ```sh
 make build      # compile to ./bin/box
 make run ARGS="state mybox"
