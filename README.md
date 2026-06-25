@@ -1,5 +1,7 @@
 # Boxes
 
+<img src="docs/img/boxes.png" alt="go gopher building boxes" width="300" />
+
 > A minimal Linux container runtime, written in Go.
 
 `box` is the CLI front-end for the Boxes runtime. It follows the OCI-style
