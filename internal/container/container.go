@@ -80,13 +80,14 @@ func New(opts *NewContainerOpts) (*Container, error) {
 }
 
 func (c *Container) Init() (err error) {
+	initMaps()
 	slog.Info("initializing container", "id", c.State.ID, "bundle", c.State.Bundle)
 
-	// 2. configure cntr
-	// TODO: configure cntr
+	if c.Spec.Linux == nil {
+		return fmt.Errorf("container runtime supports linux only")
+	}
 
 	err = c.execHooks(hooks.CreateRuntime)
-
 	if err != nil {
 		return err
 	}
@@ -97,16 +98,54 @@ func (c *Container) Init() (err error) {
 	}
 
 	defer errs.WrapDeferedClose(listener, &err)
-	// 5. reexec
-	// proc filesystem is pseudo-fs, /self/exe is a link
-	// to the cntr runtime itself
+
 	slog.Debug("reexecing container process", "id", c.State.ID)
 	cmd := exec.Command("/proc/self/exe", "reexec", c.State.ID)
 
+	for _, ns := range c.Spec.Linux.Namespaces {
+		if ns.Path != "" {
+			// TODO: research how to handle this. check setns(2)
+			// can't go through clone flags, either open ns fd and setns
+			// before exec, check how runc handles it
+			continue
+		}
+
+		switch ns.Type {
+		case specs.CgroupNamespace:
+			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWCGROUP
+		case specs.IPCNamespace:
+			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWIPC
+		case specs.MountNamespace:
+			// NOTE: the mount-ns flag is newns, it's the oldest namespace before
+			// ns conventions
+			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWNS
+		case specs.NetworkNamespace:
+			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWNET
+		case specs.PIDNamespace:
+			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWPID
+		case specs.TimeNamespace:
+			// TODO: Check spec
+			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWTIME
+		case specs.UTSNamespace:
+			// unix time share ns - part of hostname change
+			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWUTS
+		case specs.UserNamespace:
+			// TODO: would need to implement rootless container capabilities
+			// skipping for talk
+			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWUSER
+		default:
+			panic(fmt.Sprintf("unexpected specs.LinuxNamespaceType: %#v", ns.Type))
+		}
+	}
+
+	// should figure out where exactly this should go
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
+	// 5. reexec
+	// proc filesystem is pseudo-fs, /self/exe is a link
+	// to the cntr runtime itself
 	if err = cmd.Start(); err != nil {
 		slog.Error("failed to start reexec container process", "id", c.State.ID, "err", err)
 		return c.cleanupOnErr(fmt.Errorf("reexec container process: %w", err))
@@ -482,7 +521,6 @@ func (c *Container) Start() error {
 }
 
 // path helpers
-
 func (c *Container) stateDir() string     { return filepath.Join(c.Dirs.State, c.State.ID) }
 func (c *Container) statePath() string    { return filepath.Join(c.stateDir(), stateFilename) }
 func (c *Container) runtimeDir() string   { return filepath.Join(c.Dirs.Runtime, c.State.ID) }
@@ -491,7 +529,7 @@ func (c *Container) containerSockPath() string {
 	return filepath.Join(c.runtimeDir(), containerSockFilename)
 }
 
-// cleanupOnErr - if an error occurs during the creation of a container
+// cleanupOnErr if an error occurs during the creation of a container
 // this method kills any started container process and removes its state and
 // runtime files. It returns the original error, wrapping it if cleanup fails.
 func (c *Container) cleanupOnErr(err error) error {
@@ -578,6 +616,8 @@ func (c *Container) execHooks(he hooks.HookEvent) error {
 	return nil
 }
 
+// listenUnix creates a listener on the init
+// sock path location and returns the listener
 func (c *Container) listenUnix() (net.Listener, error) {
 	sockPath := c.initSockPath()
 	slog.Debug("listening on init sock", "id", c.State.ID, "path", sockPath)
