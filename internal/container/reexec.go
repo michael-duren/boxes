@@ -14,10 +14,14 @@ import (
 func (c *Container) Reexec() error {
 	slog.Info("reexec started in container process", "id", c.State.ID, "pid", os.Getpid())
 
+	var setHostnameErr error
 	if c.Spec.Hostname != "" {
-		syscall.Sethostname([]byte(c.Spec.Hostname))
+		setHostnameErr = syscall.Sethostname([]byte(c.Spec.Hostname))
 	} else {
-		syscall.Sethostname([]byte(c.State.ID))
+		setHostnameErr = syscall.Sethostname([]byte(c.State.ID))
+	}
+	if setHostnameErr != nil {
+		return fmt.Errorf("set hostname: %w", setHostnameErr)
 	}
 
 	// send ready

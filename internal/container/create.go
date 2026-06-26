@@ -9,9 +9,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/opencontainers/runtime-spec/specs-go"
+
 	"github.com/michael-duren/boxes/internal/errs"
 	"github.com/michael-duren/boxes/internal/hooks"
-	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
 func (c *Container) Init() (err error) {
@@ -35,40 +36,9 @@ func (c *Container) Init() (err error) {
 
 	slog.Debug("reexecing container process", "id", c.State.ID)
 	cmd := exec.Command("/proc/self/exe", "reexec", c.State.ID)
-
-	for _, ns := range c.Spec.Linux.Namespaces {
-		if ns.Path != "" {
-			// TODO: research how to handle this. check setns(2)
-			// can't go through clone flags, either open ns fd and setns
-			// before exec, check how runc handles it
-			continue
-		}
-
-		switch ns.Type {
-		case specs.CgroupNamespace:
-			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWCGROUP
-		case specs.IPCNamespace:
-			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWIPC
-		case specs.MountNamespace:
-			// NOTE: the mount-ns flag is newns, it's the oldest namespace before
-			// ns conventions
-			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWNS
-		case specs.NetworkNamespace:
-			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWNET
-		case specs.PIDNamespace:
-			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWPID
-		case specs.TimeNamespace:
-			// TODO: Check spec
-			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWTIME
-		case specs.UTSNamespace:
-			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWUTS
-		case specs.UserNamespace:
-			// WARN: would need to implement rootless container capabilities
-			// skipping for talk
-			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWUSER
-		default:
-			panic(fmt.Sprintf("unexpected specs.LinuxNamespaceType: %#v", ns.Type))
-		}
+	err = c.applyNamespaces(cmd)
+	if err != nil {
+		return err
 	}
 
 	// should figure out where exactly this should go
@@ -88,6 +58,7 @@ func (c *Container) Init() (err error) {
 	slog.Debug("reexec container process started", "id", c.State.ID, "pid", c.State.Pid)
 
 	// 6. release container process
+	//
 	if err = cmd.Process.Release(); err != nil {
 		slog.Error("failed to release container process", "id", c.State.ID, "pid", c.State.Pid, "err", err)
 		return c.cleanupOnErr(fmt.Errorf("releasing container process: %w", err))
@@ -128,5 +99,43 @@ func (c *Container) Init() (err error) {
 	slog.Info("container created", "id", c.State.ID, "pid", c.State.Pid, "status", c.State.Status)
 
 	// 11. exit
+	return nil
+}
+
+func (c *Container) applyNamespaces(cmd *exec.Cmd) error {
+	for _, ns := range c.Spec.Linux.Namespaces {
+		if ns.Path != "" {
+			// TODO: research how to handle this. check setns(2)
+			// can't go through clone flags, either open ns fd and setns
+			// before exec, check how runc handles it
+			continue
+		}
+
+		switch ns.Type {
+		case specs.CgroupNamespace:
+			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWCGROUP
+		case specs.IPCNamespace:
+			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWIPC
+		case specs.MountNamespace:
+			// NOTE: the mount-ns flag is newns, it's the oldest namespace before
+			// ns conventions
+			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWNS
+		case specs.NetworkNamespace:
+			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWNET
+		case specs.PIDNamespace:
+			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWPID
+		case specs.TimeNamespace:
+			// TODO: Check spec
+			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWTIME
+		case specs.UTSNamespace:
+			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWUTS
+		case specs.UserNamespace:
+			// WARN: would need to implement rootless container capabilities
+			// skipping for talk
+			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWUSER
+		default:
+			return fmt.Errorf("unexpected specs.LinuxNamespaceType: %#v", ns.Type)
+		}
+	}
 	return nil
 }
