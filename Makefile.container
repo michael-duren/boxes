@@ -25,3 +25,7 @@ delete:
 
 force-delete:
 	box --debug delete --force $(CONTAINER)
+
+# debugging
+console:
+	tail -f "$$XDG_STATE_HOME/boxes/logs/boxes.log"

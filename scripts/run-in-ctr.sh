@@ -13,4 +13,4 @@ fi
 
 echo "building $ctr"
 docker build -t "$ctr" .
-docker run -it "$ctr"
+docker run -it --privileged "$ctr"
