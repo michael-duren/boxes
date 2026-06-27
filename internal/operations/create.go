@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
 
@@ -18,6 +19,11 @@ type CreateOpts struct {
 	ID string
 	// the path to the os bundle
 	Bundle string
+	// PidFile, when set, is the path the container process PID is written to
+	// after the container is created. This follows the runc/runtime-tools CLI
+	// convention (not the OCI runtime spec, which defines no CLI). Empty means
+	// do not write a pid file.
+	PidFile string
 }
 
 func Create(opts *CreateOpts) error {
@@ -75,6 +81,14 @@ func Create(opts *CreateOpts) error {
 	if err := cntr.Save(); err != nil {
 		slog.Error("failed to save container", "id", opts.ID, "err", err)
 		return fmt.Errorf("save container: %w", err)
+	}
+
+	if opts.PidFile != "" {
+		if err := os.WriteFile(opts.PidFile, []byte(strconv.Itoa(cntr.State.Pid)), 0o644); err != nil {
+			slog.Error("failed to write pid file", "id", opts.ID, "pidFile", opts.PidFile, "err", err)
+			return fmt.Errorf("write pid file: %w", err)
+		}
+		slog.Debug("wrote pid file", "id", opts.ID, "pidFile", opts.PidFile, "pid", cntr.State.Pid)
 	}
 
 	slog.Info("create operation complete", "id", opts.ID)
