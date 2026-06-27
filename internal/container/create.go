@@ -1,6 +1,7 @@
 package container
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -19,11 +20,13 @@ func (c *Container) Init() (err error) {
 	slog.Info("initializing container", "id", c.State.ID, "bundle", c.State.Bundle)
 
 	if c.Spec.Linux == nil {
+		slog.Warn("only linux is supported, was passed an empty linux spec")
 		return fmt.Errorf("container runtime supports linux only")
 	}
 
 	err = c.execHooks(hooks.CreateRuntime)
 	if err != nil {
+		slog.Warn("error trying to execute create runtime hoook", "error", err)
 		return err
 	}
 
@@ -31,6 +34,7 @@ func (c *Container) Init() (err error) {
 	if err != nil {
 		return c.cleanupOnErr(err)
 	}
+	slog.Debug("init sock listener ready", "id", c.State.ID, "addr", listener.Addr())
 
 	defer errs.WrapDeferedClose(listener, &err)
 
@@ -38,6 +42,7 @@ func (c *Container) Init() (err error) {
 	cmd := exec.Command("/proc/self/exe", "reexec", c.State.ID)
 	err = c.applyNamespaces(cmd)
 	if err != nil {
+		slog.Error("failed to apply namespaces", "id", c.State.ID, "err", err)
 		return err
 	}
 
@@ -46,7 +51,6 @@ func (c *Container) Init() (err error) {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	// 5. reexec
 	// proc filesystem is pseudo-fs, /self/exe is a link
 	// to the cntr runtime itself
 	if err = cmd.Start(); err != nil {
@@ -103,18 +107,31 @@ func (c *Container) Init() (err error) {
 }
 
 func (c *Container) applyNamespaces(cmd *exec.Cmd) error {
+	slog.Debug("applying namespaces", "id", c.State.ID, "count", len(c.Spec.Linux.Namespaces))
+	if err := c.validateNamespacePrivellages(); err != nil {
+		return err
+	}
+
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+
 	for _, ns := range c.Spec.Linux.Namespaces {
 		if ns.Path != "" {
 			// TODO: research how to handle this. check setns(2)
 			// can't go through clone flags, either open ns fd and setns
 			// before exec, check how runc handles it
+			slog.Debug("skipping namespace with explicit path", "id", c.State.ID, "type", ns.Type, "path", ns.Path)
 			continue
 		}
 
+		slog.Debug("adding namespace clone flag", "id", c.State.ID, "type", ns.Type)
 		switch ns.Type {
 		case specs.CgroupNamespace:
 			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWCGROUP
 		case specs.IPCNamespace:
+			// INFO: isolates System V IPC objects and POSIX message queues. See
+			// ipc_namespaces(7).
 			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWIPC
 		case specs.MountNamespace:
 			// NOTE: the mount-ns flag is newns, it's the oldest namespace before
@@ -134,8 +151,25 @@ func (c *Container) applyNamespaces(cmd *exec.Cmd) error {
 			// skipping for talk
 			cmd.SysProcAttr.Cloneflags |= syscall.CLONE_NEWUSER
 		default:
+			slog.Error("unexpected namespace type", "id", c.State.ID, "type", ns.Type)
 			return fmt.Errorf("unexpected specs.LinuxNamespaceType: %#v", ns.Type)
 		}
 	}
+
+	slog.Debug("namespaces applied", "id", c.State.ID, "cloneflags", cmd.SysProcAttr.Cloneflags)
 	return nil
+}
+
+func (c *Container) validateNamespacePrivellages() error {
+	for _, ns := range c.Spec.Linux.Namespaces {
+		if ns.Type == specs.UserNamespace {
+			return nil
+		}
+	}
+
+	if os.Getuid() == 0 {
+		return nil
+	}
+
+	return errors.New("must be a user who has CAP_SYS_ADMIN (sudo) if not creating user ns")
 }

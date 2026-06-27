@@ -14,14 +14,14 @@ import (
 func (c *Container) Reexec() error {
 	slog.Info("reexec started in container process", "id", c.State.ID, "pid", os.Getpid())
 
-	var setHostnameErr error
-	if c.Spec.Hostname != "" {
-		setHostnameErr = syscall.Sethostname([]byte(c.Spec.Hostname))
-	} else {
-		setHostnameErr = syscall.Sethostname([]byte(c.State.ID))
+	hostname := c.Spec.Hostname
+	if hostname == "" {
+		hostname = c.State.ID
 	}
-	if setHostnameErr != nil {
-		return fmt.Errorf("set hostname: %w", setHostnameErr)
+	slog.Debug("setting container hostname", "id", c.State.ID, "hostname", hostname)
+	if err := syscall.Sethostname([]byte(hostname)); err != nil {
+		slog.Error("failed to set hostname", "id", c.State.ID, "hostname", hostname, "err", err)
+		return fmt.Errorf("set hostname: %w", err)
 	}
 
 	// send ready
@@ -45,15 +45,17 @@ func (c *Container) Reexec() error {
 	_ = initConn.Close()
 
 	// NOTE: after sending ready we are saying it is created
+	slog.Debug("executing createContainer hooks", "id", c.State.ID)
 	err = c.execHooks(hooks.CreateContainer)
 
 	if err != nil {
+		slog.Error("createContainer hook execution failed", "id", c.State.ID, "err", err)
 		return err
 	}
 
 	// open a unix socket this will continue to listen until the user or system
 	// executes start
-	slog.Debug("listening on container sock, waiting for start", "id", c.State.ID)
+	slog.Debug("listening on container sock, waiting for start", "id", c.State.ID, "path", c.containerSockPath())
 	listener, err := net.Listen(
 		"unix",
 		c.containerSockPath(),
@@ -89,9 +91,11 @@ func (c *Container) Reexec() error {
 	_ = listener.Close()
 
 	// NOTE: container hooks now in container namespace
+	slog.Debug("executing startContainer hooks", "id", c.State.ID)
 	err = c.execHooks(hooks.StartContainer)
 
 	if err != nil {
+		slog.Error("startContainer hook execution failed", "id", c.State.ID, "err", err)
 		return err
 	}
 
@@ -101,6 +105,7 @@ func (c *Container) Reexec() error {
 		slog.Error("failed to find path of user process binary", "id", c.State.ID, "bin", c.Spec.Process.Args[0], "err", err)
 		return fmt.Errorf("find path of user process binary: %w", err)
 	}
+	slog.Debug("resolved user process binary path", "id", c.State.ID, "bin", bin)
 
 	// NOTE: any cmd args
 	args := c.Spec.Process.Args

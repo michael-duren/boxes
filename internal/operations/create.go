@@ -28,6 +28,7 @@ func Create(opts *CreateOpts) error {
 		slog.Error("failed to resolve absolute bundle path", "id", opts.ID, "bundle", opts.Bundle, "err", err)
 		return fmt.Errorf("absolute path from bundle: %w", err)
 	}
+	slog.Debug("resolved absolute bundle path", "id", opts.ID, "bundle", bundle)
 
 	configPath := filepath.Join(bundle, "config.json")
 	slog.Debug("reading config file", "id", opts.ID, "path", configPath)
@@ -36,12 +37,18 @@ func Create(opts *CreateOpts) error {
 		slog.Error("failed to read config file", "id", opts.ID, "path", configPath, "err", err)
 		return fmt.Errorf("read config file: %w", err)
 	}
+	slog.Debug("read config file", "id", opts.ID, "path", configPath, "bytes", len(config))
 
 	var spec *specs.Spec
 	if err := json.Unmarshal(config, &spec); err != nil {
 		slog.Error("failed to unmarshal config", "id", opts.ID, "err", err)
 		return fmt.Errorf("unmarshall config: %w", err)
 	}
+	slog.Debug("parsed container config",
+		"id", opts.ID,
+		"ociVersion", spec.Version,
+		"hostname", spec.Hostname,
+	)
 
 	cntr, err := container.New(&container.NewContainerOpts{
 		ID:     opts.ID,

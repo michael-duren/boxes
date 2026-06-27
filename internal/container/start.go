@@ -27,13 +27,15 @@ func (c *Container) Start() error {
 		return fmt.Errorf("container cannot be started in current state (%s)", c.State.Status)
 	}
 
+	slog.Debug("executing prestart hooks", "id", c.State.ID)
 	err := c.execHooks(hooks.Prestart)
 
 	if err != nil {
+		slog.Error("prestart hook execution failed", "id", c.State.ID, "err", err)
 		return err
 	}
 
-	slog.Debug("dialing container sock to send start", "id", c.State.ID)
+	slog.Debug("dialing container sock to send start", "id", c.State.ID, "path", c.containerSockPath())
 	conn, err := net.Dial(
 		"unix",
 		c.containerSockPath(),
@@ -43,6 +45,7 @@ func (c *Container) Start() error {
 		return fmt.Errorf("dial container sock: %w", err)
 	}
 
+	slog.Debug("sending 'start' to container process", "id", c.State.ID)
 	if _, err := conn.Write([]byte("start")); err != nil {
 		slog.Error("failed to write 'start' to container sock", "id", c.State.ID, "err", err)
 		return fmt.Errorf("write 'start' msg to container sock: %w", err)
