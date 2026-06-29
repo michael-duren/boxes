@@ -7,8 +7,11 @@ PREFIX ?= $(HOME)/.local
 
 all: build
 
+ctr: 
+	@./scripts/run-in-ctr.sh
+
 alpine:
-	./scripts/create-alpine.sh
+	@./scripts/create-alpine.sh
 
 build:
 	mkdir -p $(BIN_DIR)

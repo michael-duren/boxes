@@ -1,0 +1,9 @@
+.cache/
+.git/
+.github/
+scripts/
+slides/
+.dockerignore
+.golangci.yml
+Dockerfile
+Makefile

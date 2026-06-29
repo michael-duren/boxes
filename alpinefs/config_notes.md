@@ -1,3 +1,47 @@
+# Config Notes
+
+## Properties
+
+### root
+
+`root` absolute or relative, value should be conventional `rootfs`
+if readonly cannot change fs
+
+### mounts
+
+array of objs, mounted in order, check mount 2 man pages
+need to read through mount optons in linux to get a better idea, must options
+correspond to mount(8)
+may also implement custom option strings that are not listed in table
+
+### process
+
+optional, ctr process, required when start is called
+terminal: if t attached to p
+cwd - must be abs path
+env array of strings
+args array of strings
+
+user: platform specific allows control 
+over which user process runs as
+"user": {
+        "uid": 1,
+        "gid": 1,
+        "umask": 63,
+        "additionalGids": [5, 6]
+    },
+
+### hostname
+
+obvious
+
+### domainname
+
+will have to come back tothat
+domainname changedin uts namespace
+
+Example config: 
+```json
 {
   "$schema": "https://raw.githubusercontent.com/opencontainers/runtime-spec/main/schema/config-schema.json",
   "ociVersion": "1.3.0",
@@ -132,3 +176,4 @@
     ]
   }
 }
+```

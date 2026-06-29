@@ -20,15 +20,23 @@ func createCmd() *cobra.Command {
 				return err
 			}
 
+			pidFile, err := cmd.Flags().GetString("pid-file")
+			if err != nil {
+				return err
+			}
+
+			cmd.SilenceUsage = true
 			return operations.Create(&operations.CreateOpts{
-				ID:     containerID,
-				Bundle: bundle,
+				ID:      containerID,
+				Bundle:  bundle,
+				PidFile: pidFile,
 			})
 		},
 	}
 
 	cwd, _ := os.Getwd()
 	cmd.Flags().StringP("bundle", "b", cwd, "Path to bundle directory")
+	cmd.Flags().String("pid-file", "", "Path to a file to write the container process PID")
 
 	return cmd
 }

@@ -1,5 +1,7 @@
 # Boxes
 
+<img src="docs/img/boxes.png" alt="go gopher building boxes" width="300" />
+
 > A minimal Linux container runtime, written in Go.
 
 `box` is the CLI front-end for the Boxes runtime. It follows the OCI-style
@@ -25,32 +27,55 @@ learning-oriented, low-level container runtime in the spirit of `runc` /
 
 ## Features
 
-- [ ] OCI-compatible container lifecycle (`create`, `start`, `kill`, `delete`, `state`)
-- [ ] Linux namespace isolation (PID, mount, UTS, IPC, network, user)
+- [x] OCI-compatible container lifecycle (`create`, `start`, `kill`, `delete`, `state`)
+- [x] Linux namespace isolation via cloneflags (PID, mount, UTS, IPC, network, cgroup, time)
+- [x] OCI runtime spec (`config.json`) consumption
+- [x] OCI lifecycle hooks (prestart, createRuntime, createContainer, startContainer, poststart, poststop)
+- [x] Reexec-based container init (`/proc/self/exe` re-exec with namespace cloneflags)
+- [x] Unix socket IPC between runtime and container process
+- [x] Structured JSON file logging with debug toggle
+- [x] On-disk state persistence (`state.json` under XDG dirs)
+- [x] Signal handling (by number or name, e.g. `SIGTERM`, `9`)
+- [x] Image rootfs handling (bring-your-own rootfs)
+- [ ] Mount setup (pivot_root, bind mounts) — namespace created but rootfs not mounted
+- [ ] User namespace UID/GID mapping (rootless containers)
+- [ ] Container environment isolation (currently inherits host env)
 - [ ] cgroups v2 resource limits (CPU, memory, pids, IO)
-- [ ] Rootless containers
-- [ ] OCI runtime spec (`config.json`) consumption
-- [ ] Image rootfs handling (bring-your-own rootfs for now)
+- [ ] Networking (veth + bridge, then CNI)
 
 ## Architecture
 
 ```
-┌──────────────┐      ┌──────────────────────┐      ┌─────────────────┐
-│  box (CLI)   │ ───► │  internal/operations │ ───► │  Linux kernel   │
-│  cmd/cli     │      │  lifecycle handlers  │      │  ns / cgroups   │
-└──────────────┘      └──────────────────────┘      └─────────────────┘
+┌──────────────┐      ┌──────────────────────┐      ┌──────────────────┐
+│  box (CLI)   │ ───► │  internal/operations │ ───► │  internal/       │
+│  cmd/cli     │      │  lifecycle handlers  │      │  container       │
+└──────────────┘      └──────────────────────┘      └────────┬─────────┘
+                                                             │
+                      ┌──────────────────────┐      ┌────────▼─────────┐
+                      │  internal/hooks      │      │  Linux kernel    │
+                      │  OCI hook execution  │      │  ns / cloneflags │
+                      └──────────────────────┘      └──────────────────┘
 ```
 
-- `cmd/cli/` — Cobra-based CLI entrypoint and subcommand wiring.
-- `internal/operations/` — runtime operations that implement each lifecycle verb.
-- _(planned)_ `internal/spec/` — OCI runtime spec parsing.
-- _(planned)_ `internal/cgroups/` — cgroups v2 controller.
-- _(planned)_ `internal/namespaces/` — namespace setup and the re-exec init process.
+Container creation uses a **reexec pattern**: `box create` forks via
+`/proc/self/exe reexec <id>` with cloneflags that set up Linux namespaces. The
+child signals "ready" over a unix socket. On `box start`, the parent tells the
+child to proceed, and the child `syscall.Exec()`s the user process.
+
+- `cmd/cli/` — Cobra-based CLI entrypoint.
+- `internal/cli/` — subcommand definitions and flag wiring.
+- `internal/operations/` — orchestration layer for each lifecycle verb.
+- `internal/container/` — core `Container` type, state machine, reexec, socket IPC.
+- `internal/hooks/` — OCI lifecycle hook execution.
+- `internal/filesystem/` — XDG directory resolution for state/runtime paths.
+- `internal/logger/` — structured JSON file logging via `slog`.
+- `internal/errs/` — deferred-close error utilities.
+- `internal/assert/` — custom test assertion library (no external test deps).
 
 ## Requirements
 
 - Linux kernel ≥ 5.10 (cgroups v2, user namespaces)
-- Go ≥ 1.26
+- Go ≥ 1.26.3
 - A rootfs directory (e.g. extracted from `docker export` or a distro bootstrap)
 - For rootless mode: `newuidmap` / `newgidmap` and `/etc/subuid` + `/etc/subgid` entries
 
@@ -117,9 +142,28 @@ directory passed to `box create`. A minimal example:
 ```
 
 State for running containers is persisted under
-`$XDG_RUNTIME_DIR/boxes/<container-id>/` _(planned)_.
+`$XDG_STATE_HOME/boxes/<container-id>/state.json`, with runtime sockets at
+`$XDG_RUNTIME_DIR/boxes/<container-id>/`.
 
 ## Development
+
+### Cross-compilation environment
+
+Boxes targets Linux. If developing on macOS (or another non-Linux OS), the
+project uses [direnv](https://direnv.net/) to automatically set `GOOS=linux`
+and `GOARCH=amd64` so that `gopls` and other Go tools resolve Linux-only
+symbols (e.g. `syscall.CLONE_*`, `unix.SIGKILL`).
+
+```sh
+brew install direnv          # if not already installed
+echo 'eval "$(direnv hook zsh)"' >> ~/.zshrc   # or your shell rc
+direnv allow                 # approve the project .envrc
+```
+
+These variables are scoped to this project directory and do not affect other
+Go projects.
+
+### Make targets
 
 ```sh
 make build      # compile to ./bin/box
@@ -136,8 +180,20 @@ Project layout:
 
 ```
 .
-├── cmd/cli/             # CLI entrypoint (Cobra)
-├── internal/operations/ # Lifecycle operation implementations
+├── cmd/cli/                 # CLI entrypoint (Cobra)
+├── internal/
+│   ├── cli/                 # Subcommand definitions + flag wiring
+│   ├── operations/          # Lifecycle operation orchestration
+│   ├── container/           # Core Container type, state machine, reexec
+│   ├── hooks/               # OCI lifecycle hook execution
+│   ├── filesystem/          # XDG directory resolution
+│   ├── logger/              # Structured JSON file logging (slog)
+│   ├── errs/                # Error utilities
+│   └── assert/              # Custom test assertion library
+├── alpinefs/                # Alpine rootfs bundle + OCI config.json
+├── scripts/                 # Helper scripts (alpine rootfs, OCI validation, Docker)
+├── docs/                    # OCI validation research notes
+├── slides/                  # Slidev presentation
 ├── Makefile
 └── go.mod
 ```
@@ -158,14 +214,20 @@ TEST=state ./scripts/oci-validation.sh # run a specific test
 
 ## Roadmap
 
-- [ ] Wire `create` to fork+exec an init process in new namespaces
-- [ ] Parse and honor OCI `config.json`
+- [x] CLI with OCI lifecycle verbs (`create`, `start`, `kill`, `delete`, `state`)
+- [x] Reexec-based init process in new namespaces
+- [x] Parse and honor OCI `config.json`
+- [x] OCI lifecycle hook execution
+- [x] Unix socket IPC (init sock + container sock)
+- [x] Persisted container state under XDG dirs
+- [ ] Mount setup (pivot_root, rootfs, bind mounts)
+- [ ] Container environment and hostname configuration
 - [ ] cgroups v2 resource limits
-- [ ] Persisted container state under `$XDG_RUNTIME_DIR`
 - [ ] Rootless support via user namespaces and `newuidmap`
+- [ ] `--pid-file` and `--console-socket` flags (OCI validation)
 - [ ] Networking (veth + bridge, then CNI)
 - [ ] `exec` into a running container
-- [ ] Integration tests with a real rootfs
+- [ ] Integration / acceptance tests with a real rootfs
 
 ## License
 
