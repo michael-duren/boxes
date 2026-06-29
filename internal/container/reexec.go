@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"syscall"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/michael-duren/boxes/internal/hooks"
 )
 
@@ -99,7 +101,14 @@ func (c *Container) Reexec() error {
 		return err
 	}
 
-	// cmd may or may not be an absolute path to bin, so we need to get an abs path to it
+	// Switch into the bundle's rootfs (mounts + pivot_root) only now that all
+	// the host-side unix-socket handshakes are done
+	if err := c.setupRootfs(); err != nil {
+		slog.Error("failed to set up rootfs", "id", c.State.ID, "err", err)
+		return fmt.Errorf("set up rootfs: %w", err)
+	}
+
+	// Resolve the binary inside the new root while we still have privilege.
 	bin, err := exec.LookPath(c.Spec.Process.Args[0])
 	if err != nil {
 		slog.Error("failed to find path of user process binary", "id", c.State.ID, "bin", c.Spec.Process.Args[0], "err", err)
@@ -107,11 +116,23 @@ func (c *Container) Reexec() error {
 	}
 	slog.Debug("resolved user process binary path", "id", c.State.ID, "bin", bin)
 
-	// NOTE: any cmd args
 	args := c.Spec.Process.Args
-	// WARN: this is the same as the host env
-	// TODO: fix to
-	env := os.Environ()
+	env := c.Spec.Process.Env
+
+	// Apply rlimits, no_new_privileges, and uid/gid (this drops privilege).
+	if err := c.applyProcessAttrs(); err != nil {
+		slog.Error("failed to apply process attributes", "id", c.State.ID, "err", err)
+		return fmt.Errorf("apply process attributes: %w", err)
+	}
+
+	// Change to the process working directory inside the new root.
+	if cwd := c.Spec.Process.Cwd; cwd != "" {
+		slog.Debug("changing to working directory", "id", c.State.ID, "cwd", cwd)
+		if err := unix.Chdir(cwd); err != nil {
+			slog.Error("failed to chdir to cwd", "id", c.State.ID, "cwd", cwd, "err", err)
+			return fmt.Errorf("chdir to cwd %q: %w", cwd, err)
+		}
+	}
 
 	// NOTE: calling a system call execve int execve(const char *pathname, char *const argv[], char *const envp[]);
 	// execve syscall throws away processes memory img (stack, heap) and loads new one in place, essentially overwriting
