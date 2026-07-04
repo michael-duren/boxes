@@ -26,6 +26,35 @@ func (c *Container) Reexec() error {
 		return fmt.Errorf("set hostname: %w", err)
 	}
 
+	err := c.sendReady()
+	if err != nil {
+		return err
+	}
+
+	slog.Debug("executing createContainer hooks", "id", c.State.ID)
+	err = c.execHooks(hooks.CreateContainer)
+
+	if err != nil {
+		slog.Error("createContainer hook execution failed", "id", c.State.ID, "err", err)
+		return err
+	}
+	err = c.waitForStart()
+	if err != nil {
+		return err
+	}
+
+	slog.Debug("executing startContainer hooks", "id", c.State.ID)
+	err = c.execHooks(hooks.StartContainer)
+
+	if err != nil {
+		slog.Error("startContainer hook execution failed", "id", c.State.ID, "err", err)
+		return err
+	}
+
+	return c.postStartSetup()
+}
+
+func (c *Container) sendReady() error {
 	// send ready
 	slog.Debug("dialing init sock", "id", c.State.ID)
 	initConn, err := net.Dial(
@@ -46,15 +75,10 @@ func (c *Container) Reexec() error {
 
 	_ = initConn.Close()
 
-	// NOTE: after sending ready we are saying it is created
-	slog.Debug("executing createContainer hooks", "id", c.State.ID)
-	err = c.execHooks(hooks.CreateContainer)
+	return nil
+}
 
-	if err != nil {
-		slog.Error("createContainer hook execution failed", "id", c.State.ID, "err", err)
-		return err
-	}
-
+func (c *Container) waitForStart() error {
 	// open a unix socket this will continue to listen until the user or system
 	// executes start
 	slog.Debug("listening on container sock, waiting for start", "id", c.State.ID, "path", c.containerSockPath())
@@ -87,20 +111,16 @@ func (c *Container) Reexec() error {
 		slog.Error("unexpected message on container sock", "id", c.State.ID, "want", "start", "got", msg)
 		return fmt.Errorf("expecting 'start' but received '%s'", msg)
 	}
-	slog.Debug("received 'start' from runtime", "id", c.State.ID)
 
 	_ = containerConn.Close()
 	_ = listener.Close()
 
-	// NOTE: container hooks now in container namespace
-	slog.Debug("executing startContainer hooks", "id", c.State.ID)
-	err = c.execHooks(hooks.StartContainer)
+	slog.Debug("received 'start' from runtime", "id", c.State.ID)
 
-	if err != nil {
-		slog.Error("startContainer hook execution failed", "id", c.State.ID, "err", err)
-		return err
-	}
+	return nil
+}
 
+func (c *Container) postStartSetup() error {
 	// Switch into the bundle's rootfs (mounts + pivot_root) only now that all
 	// the host-side unix-socket handshakes are done
 	if err := c.setupRootfs(); err != nil {
