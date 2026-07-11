@@ -31,12 +31,13 @@ func createCmd() *cobra.Command {
 			}
 
 			cmd.SilenceUsage = true
-			return operations.Create(&operations.CreateOpts{
+			_, err = operations.Create(&operations.CreateOpts{
 				ID:            containerID,
 				Bundle:        bundle,
 				PidFile:       pidFile,
 				ConsoleSocket: consoleSocket,
 			})
+			return err
 		},
 	}
 
