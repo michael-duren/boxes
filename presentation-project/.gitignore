@@ -1,0 +1,12 @@
+# exported container filesystem (regenerate with `make setup-node`)
+/rootfs/
+
+# the real interpreter, if it ever gets pulled out of the image
+node.real
+
+# built demo binary
+/demo
+/bin/
+
+# probe output
+*.log

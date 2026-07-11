@@ -1,0 +1,13 @@
+{
+  "name": "commit-your-code-banner",
+  "version": "1.0.0",
+  "description": "Big 'hello, commit your code!' banner that reads the evilnode escape-probe log and shows vulnerabilities vs. secure.",
+  "type": "commonjs",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
