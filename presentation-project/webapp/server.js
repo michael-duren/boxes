@@ -211,7 +211,7 @@ const PAGE = (resultsHTML) => `<!doctype html>
 
     <div id="results">${resultsHTML}</div>
 
-    <div class="foot" id="foot"></div>
+    <div class="foot" id="foot"><span id="footmeta"></span><span class="live"><span class="beat"></span>live</span></div>
     <noscript><div class="foot">(live auto-refresh needs JS; reload the page after re-running the probe.)</div></noscript>
   </div>
 
@@ -219,9 +219,16 @@ const PAGE = (resultsHTML) => `<!doctype html>
 const STATUS = {
   ESCAPED: 'ESCAPED', LEAK: 'LEAK', CONTAINED: 'CONTAINED'
 };
+let lastSig = null;
 function render(v){
+  // Only touch the DOM when the scan actually changed. Re-rendering every poll
+  // would recreate the .beat node and restart its animation, making the live
+  // dot snap back to small every few seconds.
+  const sig = JSON.stringify(v);
+  if(sig === lastSig) return;
+  lastSig = sig;
+
   const results = document.getElementById('results');
-  const foot = document.getElementById('foot');
   if(v.state === 'vuln'){
     const items = v.items.filter(i => i.status==='ESCAPED' || i.status==='LEAK')
       .sort((a,b)=> (a.status==='ESCAPED'?0:1)-(b.status==='ESCAPED'?0:1));
@@ -263,9 +270,11 @@ function render(v){
       + 'It writes <code>'+escapeHtml(v.logPath || '/var/log/evilnode.log')+'</code>, then reload this page.'
       + '</div></div>';
   }
-  foot.innerHTML = 'log: <code>'+escapeHtml(v.logPath || '—')+'</code>'
-    + (v.stamp ? ' &middot; scanned '+escapeHtml(v.stamp) : '')
-    + '<span class="live"><span class="beat"></span>live</span>';
+  // Update only the meta text; the persistent .beat node is left alone so its
+  // animation keeps running smoothly.
+  document.getElementById('footmeta').innerHTML =
+    'log: <code>'+escapeHtml(v.logPath || '—')+'</code>'
+    + (v.stamp ? ' &middot; scanned '+escapeHtml(v.stamp) : '') + ' ';
 }
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,function(c){
   return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c];});}

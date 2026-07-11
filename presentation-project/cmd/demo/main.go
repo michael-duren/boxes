@@ -21,7 +21,6 @@ func main() {
 		reexec(cmdArgs)
 	default:
 		helpers.Usage()
-		return
 	}
 }
 
