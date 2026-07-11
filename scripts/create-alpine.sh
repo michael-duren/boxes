@@ -14,7 +14,7 @@ if [[ ! -e "$path" ]]; then
 else
     echo "removing previous installation at path: $path"
     read -rp "are you sure you want to do this? (Y/n)" answer
-    if [[ "${answer,,}" != "y" ]]; then
+    if [[ answer != [Yy] ]]; then
         echo "user selected no, exiting script"
         exit 0
     fi

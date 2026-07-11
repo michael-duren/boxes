@@ -24,15 +24,19 @@ type CreateOpts struct {
 	// convention (not the OCI runtime spec, which defines no CLI). Empty means
 	// do not write a pid file.
 	PidFile string
+	// ConsoleSocket is the path to a listening AF_UNIX socket the PTY master is
+	// sent to when the config requests a terminal (process.terminal = true).
+	// Required in that case; ignored otherwise.
+	ConsoleSocket string
 }
 
-func Create(opts *CreateOpts) error {
+func Create(opts *CreateOpts) (*container.Container, error) {
 	slog.Info("create operation", "id", opts.ID, "bundle", opts.Bundle)
 
 	bundle, err := filepath.Abs(opts.Bundle)
 	if err != nil {
 		slog.Error("failed to resolve absolute bundle path", "id", opts.ID, "bundle", opts.Bundle, "err", err)
-		return fmt.Errorf("absolute path from bundle: %w", err)
+		return nil, fmt.Errorf("absolute path from bundle: %w", err)
 	}
 	slog.Debug("resolved absolute bundle path", "id", opts.ID, "bundle", bundle)
 
@@ -41,14 +45,14 @@ func Create(opts *CreateOpts) error {
 	config, err := os.ReadFile(configPath)
 	if err != nil {
 		slog.Error("failed to read config file", "id", opts.ID, "path", configPath, "err", err)
-		return fmt.Errorf("read config file: %w", err)
+		return nil, fmt.Errorf("read config file: %w", err)
 	}
 	slog.Debug("read config file", "id", opts.ID, "path", configPath, "bytes", len(config))
 
 	var spec *specs.Spec
 	if err := json.Unmarshal(config, &spec); err != nil {
 		slog.Error("failed to unmarshal config", "id", opts.ID, "err", err)
-		return fmt.Errorf("unmarshall config: %w", err)
+		return nil, fmt.Errorf("unmarshall config: %w", err)
 	}
 	slog.Debug("parsed container config",
 		"id", opts.ID,
@@ -65,32 +69,32 @@ func Create(opts *CreateOpts) error {
 
 	if err != nil {
 		slog.Error("failed to create container", "id", opts.ID, "err", err)
-		return fmt.Errorf("create container: %w", err)
+		return nil, fmt.Errorf("create container: %w", err)
 	}
 
 	if err := cntr.Save(); err != nil {
 		slog.Error("failed to save container", "id", opts.ID, "err", err)
-		return fmt.Errorf("save container: %w", err)
+		return cntr, fmt.Errorf("save container: %w", err)
 	}
 
-	if err := cntr.Init(); err != nil {
+	if err := cntr.Init(opts.ConsoleSocket); err != nil {
 		slog.Error("failed to initialize container", "id", opts.ID, "err", err)
-		return fmt.Errorf("initialize container: %w", err)
+		return cntr, fmt.Errorf("initialize container: %w", err)
 	}
 
 	if err := cntr.Save(); err != nil {
 		slog.Error("failed to save container", "id", opts.ID, "err", err)
-		return fmt.Errorf("save container: %w", err)
+		return cntr, fmt.Errorf("save container: %w", err)
 	}
 
 	if opts.PidFile != "" {
 		if err := os.WriteFile(opts.PidFile, []byte(strconv.Itoa(cntr.State.Pid)), 0o644); err != nil {
 			slog.Error("failed to write pid file", "id", opts.ID, "pidFile", opts.PidFile, "err", err)
-			return fmt.Errorf("write pid file: %w", err)
+			return cntr, fmt.Errorf("write pid file: %w", err)
 		}
 		slog.Debug("wrote pid file", "id", opts.ID, "pidFile", opts.PidFile, "pid", cntr.State.Pid)
 	}
 
 	slog.Info("create operation complete", "id", opts.ID)
-	return nil
+	return cntr, nil
 }
