@@ -5,7 +5,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/michael-duren/boxes/presentation-project/cmd/internal/helpers"
+	"github.com/michael-duren/boxes/presentation-project/internal/helpers"
 )
 
 func main() {
