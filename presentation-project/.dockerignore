@@ -1,7 +1,0 @@
-# keep the exported rootfs (~1.3G) out of the build context
-rootfs/
-.git/
-*.log
-**/node_modules/
-demo
-bin/
